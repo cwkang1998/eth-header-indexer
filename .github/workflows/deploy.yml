@@ -1,0 +1,48 @@
+name: Deploy to Remote Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v3
+
+      - name: Set up SSH and Deploy Changes
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ec2-3-87-142-202.compute-1.amazonaws.com
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: 22
+          script: |
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cargo --version || { echo "Cargo not found"; exit 1; }
+
+            cd fossil-headers-db
+            git fetch origin main
+            git reset --hard origin/main
+            cargo build --release
+            sudo mv target/release/fossil_headers_db /usr/local/bin/fossil_headers_db
+
+            sudo systemctl daemon-reload
+
+            # Ensure no conflicting service is running
+            sudo systemctl stop fossil_headers_db || true
+
+            # Restart the service and verify status
+            sudo systemctl start fossil_headers_db
+            sudo systemctl status fossil_headers_db --no-pager
+
+            START_BLOCK=20990710
+
+            echo "Starting block: $START_BLOCK"
+
+            # Create or attach to a tmux session and run cargo inside it
+            tmux new-session -d -s fossil_fix_session "cargo run fix --start $START_BLOCK"

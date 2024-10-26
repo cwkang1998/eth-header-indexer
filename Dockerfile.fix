@@ -1,0 +1,30 @@
+# Multistage build
+FROM rust:1.81 AS builder
+
+WORKDIR /usr/app
+COPY . .
+RUN cargo build --release
+
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/app
+COPY --from=builder /usr/app/target/release/fossil_headers_db .
+
+COPY <<EOF /app/run.sh
+#!/bin/sh
+while true; do
+    /usr/app/fossil_headers_db fix
+    sleep \${INTERVAL:-300}
+done
+EOF
+
+EXPOSE 8080
+
+RUN chmod +x /app/run.sh
+
+CMD ["/app/run.sh"]
