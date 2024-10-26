@@ -24,10 +24,12 @@ jobs:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          # FIX_INTERVAL: ${{ secrets.FIX_INTERVAL }}
         with:
           host: ec2-3-87-142-202.compute-1.amazonaws.com
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
           script: |
             # Navigate to the project directory
