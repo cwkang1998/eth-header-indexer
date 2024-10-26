@@ -17,23 +17,23 @@ jobs:
       # Step 2: SSH into the remote server and run deployment commands
       - name: SSH into Remote Server and Deploy Changes
         uses: appleboy/ssh-action@v1.1.0
-        env:
-          DB_CONNECTION_STRING_BACKUP: ${{ secrets.DB_CONNECTION_STRING_BACKUP }}
-          NODE_CONNECTION_STRING: ${{ secrets.NODE_CONNECTION_STRING }}
-          ROUTER_ENDPOINT: ${{ secrets.ROUTER_ENDPOINT }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          # FIX_INTERVAL: ${{ secrets.FIX_INTERVAL }}
         with:
           host: ec2-3-87-142-202.compute-1.amazonaws.com
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
-          script: |
-            # Navigate to the project directory
-            cd ~/fossil-headers-db
+          # Use 'envs' to pass environment variables to the remote server
+          envs: |
+            DB_CONNECTION_STRING_BACKUP=${{ secrets.DB_CONNECTION_STRING_BACKUP }}
+            NODE_CONNECTION_STRING=${{ secrets.NODE_CONNECTION_STRING }}
+            ROUTER_ENDPOINT=${{ secrets.ROUTER_ENDPOINT }}
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+              script: |
+                # Navigate to the project directory
+                cd ~/fossil-headers-db
 
             # Pull the latest changes from the main branch
             git fetch origin main
@@ -47,7 +47,6 @@ jobs:
             POSTGRES_USER=${POSTGRES_USER}
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
             POSTGRES_DB=${POSTGRES_DB}
-            FIX_INTERVAL=${FIX_INTERVAL}
             EOF
 
             # Ensure Docker and Docker Compose are installed
@@ -58,3 +57,4 @@ jobs:
             docker-compose down
             docker-compose build --no-cache
             docker-compose up -d
+
