@@ -10,39 +10,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: (Optional) Checkout the repository
       - name: Checkout the repository
         uses: actions/checkout@v3
 
-      - name: Set up SSH and Deploy Changes
+      # Step 2: SSH into the remote server and run deployment commands
+      - name: SSH into Remote Server and Deploy Changes
         uses: appleboy/ssh-action@v1.1.0
+        env:
+          DB_CONNECTION_STRING_BACKUP: ${{ secrets.DB_CONNECTION_STRING_BACKUP }}
+          NODE_CONNECTION_STRING: ${{ secrets.NODE_CONNECTION_STRING }}
+          ROUTER_ENDPOINT: ${{ secrets.ROUTER_ENDPOINT }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
         with:
           host: ec2-3-87-142-202.compute-1.amazonaws.com
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
           script: |
-            export PATH="$HOME/.cargo/bin:$PATH"
-            cargo --version || { echo "Cargo not found"; exit 1; }
+            # Navigate to the project directory
+            cd ~/fossil-headers-db
 
-            cd fossil-headers-db
+            # Pull the latest changes from the main branch
             git fetch origin main
             git reset --hard origin/main
-            cargo build --release
-            sudo mv target/release/fossil_headers_db /usr/local/bin/fossil_headers_db
 
-            sudo systemctl daemon-reload
+            # Create or update the .env file with secrets
+            cat > .env << EOF
+            DB_CONNECTION_STRING_BACKUP=${DB_CONNECTION_STRING_BACKUP}
+            NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
+            ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
+            POSTGRES_USER=${POSTGRES_USER}
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            POSTGRES_DB=${POSTGRES_DB}
+            FIX_INTERVAL=${FIX_INTERVAL}
+            EOF
 
-            # Ensure no conflicting service is running
-            sudo systemctl stop fossil_headers_db || true
+            # Ensure Docker and Docker Compose are installed
+            docker --version || { echo "Docker not found"; exit 1; }
+            docker-compose --version || { echo "Docker Compose not found"; exit 1; }
 
-            # Restart the service and verify status
-            sudo systemctl start fossil_headers_db
-            sudo systemctl status fossil_headers_db --no-pager
-
-            START_BLOCK=20990710
-
-            echo "Starting block: $START_BLOCK"
-
-            # Create or attach to a tmux session and run cargo inside it
-            tmux new-session -d -s fossil_fix_session "cargo run fix --start $START_BLOCK"
+            # Build and run the Docker Compose services
+            docker-compose down
+            docker-compose build --no-cache
+            docker-compose up -d
