@@ -10,11 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: (Optional) Checkout the repository
-      - name: Checkout the repository
-        uses: actions/checkout@v3
-
-      # Step 2: SSH into the remote server and run deployment commands
+      # Step 1: SSH into the remote server and run deployment commands
       - name: SSH into Remote Server and Deploy Changes
         uses: appleboy/ssh-action@v1.1.0
         with:
@@ -23,14 +19,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
-        # Use 'env' to pass environment variables to the remote server
-        env:
-          DB_CONNECTION_STRING_BACKUP: ${{ secrets.DB_CONNECTION_STRING_BACKUP }}
-          NODE_CONNECTION_STRING: ${{ secrets.NODE_CONNECTION_STRING }}
-          ROUTER_ENDPOINT: ${{ secrets.ROUTER_ENDPOINT }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           script: |
             # Navigate to the project directory
             cd ~/fossil-headers-db
@@ -38,15 +26,6 @@ jobs:
             # Pull the latest changes from the main branch
             git fetch origin main
             git reset --hard origin/main
-
-            # Create or update the .env file with secrets
-            echo "DB_CONNECTION_STRING_BACKUP=${DB_CONNECTION_STRING_BACKUP}" > .env
-            echo "NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}" >> .env
-            echo "ROUTER_ENDPOINT=${ROUTER_ENDPOINT}" >> .env
-            echo "POSTGRES_USER=${POSTGRES_USER}" >> .env
-            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" >> .env
-            echo "POSTGRES_DB=${POSTGRES_DB}" >> .env
-            echo "FIX_INTERVAL=${FIX_INTERVAL}" >> .env
 
             # Ensure Docker and Docker Compose are installed
             docker --version || { echo "Docker not found"; exit 1; }
@@ -56,4 +35,3 @@ jobs:
             docker-compose down
             docker-compose build --no-cache
             docker-compose up -d
-
