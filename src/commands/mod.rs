@@ -74,7 +74,7 @@ async fn process_missing_block(block_number: i64, range_start_pointer: &mut i64)
             }
             Err(e) => warn!("[fill_gaps] Error retrieving block {block_number}: {e}"),
         }
-        let backoff: u64 = (i - 0).pow(2) * 5;
+        let backoff: u64 = (i).pow(2) * 5;
         tokio::time::sleep(Duration::from_secs(backoff)).await;
     }
     error!("[fill_gaps] Error with block number {}", block_number);
@@ -210,7 +210,7 @@ async fn process_block(block_number: i64) -> Result<()> {
                 block_number, e
             ),
         }
-        let backoff: u64 = (i - 0).pow(2) * 5;
+        let backoff: u64 = (i).pow(2) * 5;
         tokio::time::sleep(Duration::from_secs(backoff)).await;
     }
     error!("[update_from] Error with block number {}", block_number);

@@ -45,9 +45,7 @@ async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     // Initialize tracing subscriber
-    fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
     info!("Starting Indexer");
 
