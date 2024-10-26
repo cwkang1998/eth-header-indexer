@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use futures_util::future::join_all;
-use log::{error, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{self, Duration};
 use tokio::task;
+use tracing::{error, info, warn};
 
 use crate::{db, endpoints, fossil_mmr};
 

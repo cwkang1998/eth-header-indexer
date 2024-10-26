@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::Result;
 use axum::{routing::get, Router};
 
-use log::info;
+use tracing::info;
 
 use tokio::{net::TcpListener, time::sleep};
 

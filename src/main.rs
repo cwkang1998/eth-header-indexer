@@ -9,9 +9,10 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use core::cmp::min;
 use futures::future::join;
-use log::{info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tracing::{info, warn};
+use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -42,7 +43,13 @@ enum Mode {
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
-    env_logger::init();
+
+    // Initialize tracing subscriber
+    fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    info!("Starting Indexer");
 
     let cli = Cli::parse();
     let should_terminate = Arc::new(AtomicBool::new(false));

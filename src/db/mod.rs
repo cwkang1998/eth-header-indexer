@@ -2,7 +2,6 @@ use crate::types::type_utils::convert_hex_string_to_i64;
 use crate::types::BlockDetails;
 use crate::types::BlockHeaderWithFullTransaction;
 use anyhow::{Context, Result};
-use log::{info, warn, error};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::ConnectOptions;
 use sqlx::QueryBuilder;
@@ -10,6 +9,7 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::OnceCell;
+use tracing::{error, info, warn};
 
 static DB_POOL: OnceCell<Arc<Pool<Postgres>>> = OnceCell::const_new();
 pub const DB_MAX_CONNECTIONS: u32 = 1000;
@@ -21,8 +21,8 @@ pub async fn get_db_pool() -> Result<Arc<Pool<Postgres>>> {
             let mut conn_options: PgConnectOptions = dotenvy::var("DB_CONNECTION_STRING")
                 .expect("DB_CONNECTION_STRING must be set")
                 .parse()?;
-            conn_options =
-                conn_options.log_slow_statements(log::LevelFilter::Debug, Duration::new(120, 0));
+            conn_options = conn_options
+                .log_slow_statements(tracing::log::LevelFilter::Debug, Duration::new(120, 0));
 
             let pool = PgPoolOptions::new()
                 .max_connections(DB_MAX_CONNECTIONS)

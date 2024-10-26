@@ -70,7 +70,7 @@ pub struct BlockHeaderWithEmptyTransaction {
     #[serde(rename(deserialize = "excessBlobGas"))]
     pub excess_blob_gas: Option<String>,
     #[serde(rename(deserialize = "parentBeaconBlockRoot"))]
-    pub parent_beacon_block_root: Option<String>
+    pub parent_beacon_block_root: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,7 +116,7 @@ pub struct BlockHeaderWithFullTransaction {
     #[serde(rename(deserialize = "excessBlobGas"))]
     pub excess_blob_gas: Option<String>,
     #[serde(rename(deserialize = "parentBeaconBlockRoot"))]
-    pub parent_beacon_block_root: Option<String>
+    pub parent_beacon_block_root: Option<String>,
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]

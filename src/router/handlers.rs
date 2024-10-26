@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use log::info;
+use tracing::info;
 
 use crate::types::ProofWrapper;
 use crate::{fossil_mmr, types::Update};

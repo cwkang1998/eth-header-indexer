@@ -4,39 +4,41 @@ services:
       dockerfile: Dockerfile.update
       context: .
     ports:
-      - 8080:8080
+      - "8080:8080"
     environment:
-      - DB_CONNECTION_STRING=postgres://postgres:postgres@db:5432/postgres
-      - NODE_CONNECTION_STRING=127.0.0.1:8545 # This should be an actual rpc url
-      - ROUTER_ENDPOINT=0.0.0.0:8080
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
+      - ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
     depends_on:
       db:
         condition: service_healthy
-  # Commenting this out as in the beginning this should not run in parallel with
-  # the update script
+
+  # Uncomment and modify the following section when ready to run the 'fix' service
   # fix:
   #   build:
   #     dockerfile: Dockerfile.fix
   #     context: .
   #   ports:
-  #     - 8080:8081
+  #     - "8081:8080"
   #   environment:
-  #     - DB_CONNECTION_STRING=postgres://postgres:postgres@db:5432/postgres
-  #     - NODE_CONNECTION_STRING=127.0.0.1:8545
-  #     - ROUTER_ENDPOINT=0.0.0.0:8080
+  #     - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+  #     - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
+  #     - ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
   #   depends_on:
   #     update:
   #       condition: service_started
+
   db:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - RUST_LOG=info 
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5

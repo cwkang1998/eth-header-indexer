@@ -1,18 +1,21 @@
 use accumulators::{
     hasher::keccak::KeccakHasher,
-    mmr::{element_index_to_leaf_index, elements_count_to_leaf_count, map_leaf_index_to_element_index, AppendResult, Proof, MMR},
+    mmr::{
+        element_index_to_leaf_index, elements_count_to_leaf_count, map_leaf_index_to_element_index,
+        AppendResult, Proof, MMR,
+    },
     store::sqlite::SQLiteStore,
 };
 use anyhow::Result;
 use chrono::{TimeZone, Utc};
 use lazy_static::lazy_static;
-use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 use tokio::sync::{Mutex, MutexGuard, OnceCell};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     db,
@@ -158,7 +161,6 @@ async fn append_to_mmr(
     for block_detail_chunk in block_details[1..].chunks(MMR_APPEND_CHUNKSIZE) {
         let mut mmr_guard = mmr.lock().await;
         for block_detail in block_detail_chunk {
-            
             if should_terminate.load(Ordering::Relaxed) {
                 info!("Termination requested. Stopping MMR update process.");
                 let element_count = mmr_guard.elements_count.get().await?;
