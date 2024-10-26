@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   update:
     build:
@@ -6,27 +8,27 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING_BACKUP}
       - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
       - ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
+      - RUST_LOG=info
     depends_on:
       db:
         condition: service_healthy
 
-  # Uncomment and modify the following section when ready to run the 'fix' service
-  # fix:
-  #   build:
-  #     dockerfile: Dockerfile.fix
-  #     context: .
-  #   ports:
-  #     - "8081:8080"
-  #   environment:
-  #     - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
-  #     - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
-  #     - ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
-  #   depends_on:
-  #     update:
-  #       condition: service_started
+  fix:
+    build:
+      dockerfile: Dockerfile.fix
+      context: .
+    environment:
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING_BACKUP}
+      - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
+      - ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
+      - RUST_LOG=info
+      - INTERVAL=${FIX_INTERVAL:-300}
+    depends_on:
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine
@@ -34,7 +36,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      - RUST_LOG=info 
     ports:
       - "5432:5432"
     healthcheck:
