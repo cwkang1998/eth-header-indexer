@@ -1,16 +1,18 @@
-# Multistage build
 FROM rust:1.81 AS builder
 
 WORKDIR /usr/app
 COPY . .
 RUN cargo build --release
 
-# Use a distroless docker image which should further reduce the size.
-# This one is setup specifically for rust.
-FROM gcr.io/distroless/cc-debian12
+FROM debian:12-slim
 WORKDIR /usr/app
 COPY --from=builder /usr/app/target/release/fossil_headers_db .
 
+# Install any necessary runtime dependencies
+RUN apt-get update && apt-get install -y libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8080
-# defaults to update mode
+
+ENV RUST_LOG=info
+
 CMD ["/usr/app/fossil_headers_db", "update"]
