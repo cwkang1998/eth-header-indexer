@@ -23,31 +23,30 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
-          # Use 'envs' to pass environment variables to the remote server
-          envs: |
-            DB_CONNECTION_STRING_BACKUP=${{ secrets.DB_CONNECTION_STRING_BACKUP }}
-            NODE_CONNECTION_STRING=${{ secrets.NODE_CONNECTION_STRING }}
-            ROUTER_ENDPOINT=${{ secrets.ROUTER_ENDPOINT }}
-            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-              script: |
-                # Navigate to the project directory
-                cd ~/fossil-headers-db
+        # Use 'env' to pass environment variables to the remote server
+        env:
+          DB_CONNECTION_STRING_BACKUP: ${{ secrets.DB_CONNECTION_STRING_BACKUP }}
+          NODE_CONNECTION_STRING: ${{ secrets.NODE_CONNECTION_STRING }}
+          ROUTER_ENDPOINT: ${{ secrets.ROUTER_ENDPOINT }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          script: |
+            # Navigate to the project directory
+            cd ~/fossil-headers-db
 
             # Pull the latest changes from the main branch
             git fetch origin main
             git reset --hard origin/main
 
             # Create or update the .env file with secrets
-            cat > .env << EOF
-            DB_CONNECTION_STRING_BACKUP=${DB_CONNECTION_STRING_BACKUP}
-            NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
-            ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
-            POSTGRES_USER=${POSTGRES_USER}
-            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            POSTGRES_DB=${POSTGRES_DB}
-            EOF
+            echo "DB_CONNECTION_STRING_BACKUP=${DB_CONNECTION_STRING_BACKUP}" > .env
+            echo "NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}" >> .env
+            echo "ROUTER_ENDPOINT=${ROUTER_ENDPOINT}" >> .env
+            echo "POSTGRES_USER=${POSTGRES_USER}" >> .env
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" >> .env
+            echo "POSTGRES_DB=${POSTGRES_DB}" >> .env
+            echo "FIX_INTERVAL=${FIX_INTERVAL}" >> .env
 
             # Ensure Docker and Docker Compose are installed
             docker --version || { echo "Docker not found"; exit 1; }
