@@ -1,10 +1,6 @@
 pub mod type_utils;
 
-use std::collections::HashMap;
-
-use accumulators::mmr::Proof;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Transaction {
@@ -117,42 +113,4 @@ pub struct BlockHeaderWithFullTransaction {
     pub excess_blob_gas: Option<String>,
     #[serde(rename(deserialize = "parentBeaconBlockRoot"))]
     pub parent_beacon_block_root: Option<String>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct Update {
-    pub latest_blocknumber: i64,
-    pub latest_roothash: String,
-    pub update_timestamp: DateTime<Utc>,
-}
-
-pub struct ProofWrapper {
-    pub proof: Proof,
-}
-
-impl Serialize for ProofWrapper {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = HashMap::new();
-
-        // Convert to owned String values
-        let element_index = self.proof.element_index.to_string();
-        let element_hash = self.proof.element_hash.to_string();
-        let siblings_hashes = serde_json::to_string(&self.proof.siblings_hashes)
-            .map_err(serde::ser::Error::custom)?;
-        let peaks_hashes =
-            serde_json::to_string(&self.proof.peaks_hashes).map_err(serde::ser::Error::custom)?;
-        let elements_count = self.proof.elements_count.to_string();
-
-        // Insert owned values into the map
-        map.insert("element_index", element_index);
-        map.insert("element_hash", element_hash);
-        map.insert("sibling_hashes", siblings_hashes);
-        map.insert("peaks_hashes", peaks_hashes);
-        map.insert("elements_count", elements_count);
-
-        map.serialize(serializer)
-    }
 }

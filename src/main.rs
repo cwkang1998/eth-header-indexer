@@ -1,3 +1,6 @@
+#![deny(unused_crate_dependencies)]
+use fossil_headers_db as _;
+
 mod commands;
 mod db;
 mod endpoints;
