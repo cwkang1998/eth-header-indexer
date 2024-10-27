@@ -1,13 +1,12 @@
 mod commands;
 mod db;
 mod endpoints;
-mod fossil_mmr;
 mod router;
 mod types;
 
-use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use core::cmp::min;
+use eyre::{Context, Result};
 use futures::future::join;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

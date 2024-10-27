@@ -1,7 +1,7 @@
 use crate::types::type_utils::convert_hex_string_to_i64;
-use crate::types::BlockDetails;
 use crate::types::BlockHeaderWithFullTransaction;
-use anyhow::{Context, Result};
+use eyre::{Context, Error, Result};
+use futures::FutureExt;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::ConnectOptions;
 use sqlx::QueryBuilder;
@@ -9,10 +9,11 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::OnceCell;
+use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 static DB_POOL: OnceCell<Arc<Pool<Postgres>>> = OnceCell::const_new();
-pub const DB_MAX_CONNECTIONS: u32 = 1000;
+pub const DB_MAX_CONNECTIONS: u32 = 20;
 
 pub async fn get_db_pool() -> Result<Arc<Pool<Postgres>>> {
     match DB_POOL.get() {
@@ -56,13 +57,25 @@ pub async fn create_tables() -> Result<()> {
  * @Returns blocknumber, else -1 if table is empty
  */
 pub async fn get_last_stored_blocknumber() -> Result<i64> {
-    let pool = get_db_pool().await.context("Failed to get database pool")?;
-    let result: (i64,) = sqlx::query_as("SELECT COALESCE(MAX(number), -1) FROM blockheaders")
-        .fetch_one(&*pool)
-        .await
-        .context("Failed to get last stored block number")?;
+    const MAX_RETRIES: u32 = 3;
 
-    Ok(result.0)
+    retry_async(
+        || {
+            async {
+                let pool = get_db_pool().await.context("Failed to get database pool")?;
+                let result: (i64,) =
+                    sqlx::query_as("SELECT COALESCE(MAX(number), -1) FROM blockheaders")
+                        .fetch_one(&*pool)
+                        .await
+                        .context("Failed to get last stored block number")?;
+
+                Ok(result.0)
+            }
+            .boxed()
+        },
+        MAX_RETRIES,
+    )
+    .await
 }
 
 /**
@@ -220,26 +233,46 @@ pub async fn write_blockheader(block_header: BlockHeaderWithFullTransaction) -> 
     Ok(())
 }
 
-/**
- * Retrieves next n numbers and hashes after provided blocknumber
- *
- * @Returns blocknumbers and hashes wrapped in a BlockDetails struct
- */
-pub async fn get_blockheaders(start_blocknumber: i64, limit: i32) -> Result<Vec<BlockDetails>> {
-    let pool = get_db_pool().await?;
-    let result: Vec<BlockDetails> = sqlx::query_as(
-        r#"
-        SELECT block_hash, number FROM blockheaders
-            WHERE number > $1
-            ORDER BY number ASC
-            LIMIT $2
-        "#,
-    )
-    .bind(start_blocknumber)
-    .bind(limit)
-    .fetch_all(&*pool)
-    .await
-    .context("Failed to get blockheaders")?;
+async fn retry_async<F, T>(mut operation: F, max_retries: u32) -> Result<T, Error>
+where
+    F: FnMut() -> futures::future::BoxFuture<'static, Result<T, Error>>,
+{
+    let mut attempts = 0;
+    loop {
+        match operation().await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                attempts += 1;
+                if attempts > max_retries || !is_transient_error(&e) {
+                    return Err(e);
+                }
+                let backoff = Duration::from_secs(2_u64.pow(attempts));
+                warn!(
+                    "Operation failed with error: {:?}. Retrying in {:?} (Attempt {}/{})",
+                    e, backoff, attempts, max_retries
+                );
+                sleep(backoff).await;
+            }
+        }
+    }
+}
 
-    Ok(result)
+fn is_transient_error(e: &Error) -> bool {
+    // Check for database connection errors
+    if let Some(db_err) = e.downcast_ref::<sqlx::Error>() {
+        match db_err {
+            sqlx::Error::Io(_) => true,
+            sqlx::Error::PoolTimedOut => true,
+            sqlx::Error::Database(db_err) => {
+                // Check database-specific error codes if needed
+                db_err.code().map_or(false, |code| {
+                    // Add database-specific error codes that are transient
+                    code == "57P01" // admin_shutdown, as an example
+                })
+            }
+            _ => false,
+        }
+    } else {
+        false
+    }
 }

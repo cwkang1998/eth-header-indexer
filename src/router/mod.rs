@@ -1,9 +1,8 @@
-use crate::router::handlers::{get_mmr_latest, get_mmr_proof};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{sync::Arc, time::Duration};
 
-use anyhow::Result;
 use axum::{routing::get, Router};
+use eyre::Result;
 
 use tracing::info;
 
@@ -12,10 +11,7 @@ use tokio::{net::TcpListener, time::sleep};
 mod handlers;
 
 pub async fn initialize_router(should_terminate: Arc<AtomicBool>) -> Result<()> {
-    let app = Router::new()
-        .route("/", get(|| async { "Healthy" }))
-        .route("/mmr", get(get_mmr_latest))
-        .route("/mmr/:blocknumber", get(get_mmr_proof));
+    let app = Router::new().route("/", get(|| async { "Healthy" }));
 
     let listener: TcpListener =
         TcpListener::bind(dotenvy::var("ROUTER_ENDPOINT").expect("ROUTER_ENDPOINT must be set"))

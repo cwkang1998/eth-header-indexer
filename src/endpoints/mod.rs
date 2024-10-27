@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use eyre::{Context, Result};
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

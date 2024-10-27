@@ -119,12 +119,6 @@ pub struct BlockHeaderWithFullTransaction {
     pub parent_beacon_block_root: Option<String>,
 }
 
-#[derive(Clone, Debug, sqlx::FromRow)]
-pub struct BlockDetails {
-    pub block_hash: String,
-    pub number: i64,
-}
-
 #[derive(Clone, Serialize)]
 pub struct Update {
     pub latest_blocknumber: i64,

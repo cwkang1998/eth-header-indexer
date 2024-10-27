@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use eyre::{Context, Result};
 use futures_util::future::join_all;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -6,7 +6,8 @@ use std::time::{self, Duration};
 use tokio::task;
 use tracing::{error, info, warn};
 
-use crate::{db, endpoints, fossil_mmr};
+use crate::db;
+use crate::endpoints;
 
 const MAX_RETRIES: u64 = 10;
 
@@ -125,7 +126,6 @@ async fn chain_update_blocks(
         }
 
         update_blocks(range_start, last_block, size, should_terminate).await?;
-        fossil_mmr::update_mmr(should_terminate).await?;
 
         loop {
             if should_terminate.load(Ordering::Relaxed) {
@@ -214,7 +214,7 @@ async fn process_block(block_number: i64) -> Result<()> {
         tokio::time::sleep(Duration::from_secs(backoff)).await;
     }
     error!("[update_from] Error with block number {}", block_number);
-    Err(anyhow::anyhow!("Failed to process block {}", block_number))
+    Err(eyre::anyhow!("Failed to process block {}", block_number))
 }
 
 async fn get_first_missing_block(start: Option<i64>) -> Result<i64> {
