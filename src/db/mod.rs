@@ -13,7 +13,7 @@ use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 static DB_POOL: OnceCell<Arc<Pool<Postgres>>> = OnceCell::const_new();
-pub const DB_MAX_CONNECTIONS: u32 = 100;
+pub const DB_MAX_CONNECTIONS: u32 = 50;
 
 pub async fn get_db_pool() -> Result<Arc<Pool<Postgres>>> {
     match DB_POOL.get() {
