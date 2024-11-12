@@ -3,11 +3,7 @@ use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-
-use crate::types::{
-    type_utils::convert_hex_string_to_i64, BlockHeaderWithEmptyTransaction,
-    BlockHeaderWithFullTransaction,
-};
+use crate::types::{type_utils::convert_hex_string_to_i64, BlockHeaderWithEmptyTransaction, BlockHeaderWithFullTransaction};
 
 static CLIENT: Lazy<Client> = Lazy::new(Client::new);
 static NODE_CONNECTION_STRING: Lazy<String> = Lazy::new(|| {
@@ -17,8 +13,6 @@ static NODE_CONNECTION_STRING: Lazy<String> = Lazy::new(|| {
 #[derive(Deserialize, Debug)]
 pub struct RpcResponse<T> {
     pub result: T,
-    // pub id: String,
-    // pub jsonrpc: String,
 }
 
 #[derive(Serialize)]
@@ -81,7 +75,35 @@ async fn make_rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
                 .await
         }
     };
-    let response = raw_response?.json::<RpcResponse<R>>().await?;
 
-    Ok(response.result)
+    let raw_response = match raw_response {
+        Ok(response) => response,
+        Err(e) => {
+            eprintln!("HTTP request error: {:?}", e);
+            return Err(e.into());
+        }
+    };
+
+    // Attempt to extract JSON from the response
+    let json_response = raw_response.text().await;
+    match json_response {
+        Ok(text) => {
+            // Try to deserialize the response, logging if it fails
+            match serde_json::from_str::<RpcResponse<R>>(&text) {
+                Ok(parsed) => Ok(parsed.result),
+                Err(e) => {
+                    eprintln!(
+                        "Deserialization error: {:?}\nResponse snippet: {:.100}",
+                        e,
+                        text // Log the first 100 characters of the response for debugging
+                    );
+                    Err(e.into())
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to read response body: {:?}", e);
+            Err(e.into())
+        }
+    }
 }

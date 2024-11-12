@@ -207,9 +207,10 @@ pub async fn write_blockheader(block_header: BlockHeaderWithFullTransaction) -> 
                 .push_bind(&tx.from)
                 .push_bind(&tx.to)
                 .push_bind(&tx.value)
-                .push_bind(&tx.gas_price)
-                .push_bind(&tx.max_priority_fee_per_gas)
-                .push_bind(&tx.max_fee_per_gas)
+                // Use "0" as the default value if gas_price is None
+                .push_bind(tx.gas_price.as_deref().unwrap_or("0"))
+                .push_bind(tx.max_priority_fee_per_gas.as_deref().unwrap_or("0"))
+                .push_bind(tx.max_fee_per_gas.as_deref().unwrap_or("0"))
                 .push_bind(&tx.gas)
                 .push_bind(&tx.chain_id);
         });

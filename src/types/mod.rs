@@ -11,7 +11,7 @@ pub struct Transaction {
     pub transaction_index: String,
     pub value: String,
     #[serde(rename(deserialize = "gasPrice"))]
-    pub gas_price: String,
+    pub gas_price: Option<String>,
     pub gas: String,
     pub from: Option<String>,
     pub to: Option<String>,
@@ -81,15 +81,14 @@ pub struct BlockHeaderWithFullTransaction {
     pub nonce: Option<String>,
     pub number: String,
     #[serde(rename(deserialize = "receiptsRoot"))]
-    pub receipts_root: String,
+    pub receipts_root: Option<String>,
     #[serde(rename(deserialize = "stateRoot"))]
-    pub state_root: String,
+    pub state_root: Option<String>,
     #[serde(rename(deserialize = "transactionsRoot"))]
-    pub transactions_root: String,
+    pub transactions_root: Option<String>,
     pub transactions: Vec<Transaction>,
     #[serde(rename(deserialize = "parentHash"))]
     pub parent_hash: Option<String>,
-    #[serde(rename(deserialize = "miner"))]
     pub miner: Option<String>,
     #[serde(rename(deserialize = "logsBloom"))]
     pub logs_bloom: Option<String>,
