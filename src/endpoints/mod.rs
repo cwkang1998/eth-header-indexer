@@ -1,9 +1,12 @@
+use crate::types::{
+    type_utils::convert_hex_string_to_i64, BlockHeaderWithEmptyTransaction,
+    BlockHeaderWithFullTransaction,
+};
 use eyre::{Context, Result};
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use crate::types::{type_utils::convert_hex_string_to_i64, BlockHeaderWithEmptyTransaction, BlockHeaderWithFullTransaction};
 
 static CLIENT: Lazy<Client> = Lazy::new(Client::new);
 static NODE_CONNECTION_STRING: Lazy<String> = Lazy::new(|| {
