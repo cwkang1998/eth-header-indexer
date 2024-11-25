@@ -4,14 +4,27 @@ use std::{sync::Arc, time::Duration};
 use axum::{routing::get, Router};
 use eyre::Result;
 
+use reqwest::StatusCode;
 use tracing::info;
 
 use tokio::{net::TcpListener, time::sleep};
 
+use crate::db::check_db_connection;
+
 mod handlers;
 
 pub async fn initialize_router(should_terminate: Arc<AtomicBool>) -> Result<()> {
-    let app = Router::new().route("/", get(|| async { "Healthy" }));
+    let app = Router::new().route(
+        "/",
+        get(|| async {
+            // Check db connection here in health check.
+            let db_check = check_db_connection().await;
+            if db_check.is_err() {
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Db connection failed");
+            }
+            (StatusCode::OK, "Healthy")
+        }),
+    );
 
     let listener: TcpListener =
         TcpListener::bind(dotenvy::var("ROUTER_ENDPOINT").expect("ROUTER_ENDPOINT must be set"))
