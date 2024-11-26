@@ -32,7 +32,7 @@ pub async fn get_latest_finalized_blocknumber(timeout: Option<u64>) -> Result<i6
         jsonrpc: "2.0",
         id: "0",
         method: "eth_getBlockByNumber",
-        params: vec!["finalized", "false"],
+        params: ("finalized", false),
     };
 
     match make_rpc_call::<_, BlockHeaderWithEmptyTransaction>(&params, timeout)
@@ -52,7 +52,7 @@ pub async fn get_full_block_by_number(
         jsonrpc: "2.0",
         id: "0",
         method: "eth_getBlockByNumber",
-        params: vec![format!("0x{:x}", number), true.to_string()],
+        params: (format!("0x{:x}", number), true),
     };
 
     make_rpc_call::<_, BlockHeaderWithFullTransaction>(&params, timeout).await
