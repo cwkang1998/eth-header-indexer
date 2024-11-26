@@ -38,6 +38,15 @@ pub async fn get_db_pool() -> Result<Arc<Pool<Postgres>>> {
     }
 }
 
+pub async fn check_db_connection() -> Result<()> {
+    let pool = get_db_pool().await.context("Failed to get database pool")?;
+    sqlx::query("SELECT 1")
+        .execute(&*pool)
+        .await
+        .context("Failed to check database connection")?;
+    Ok(())
+}
+
 pub async fn create_tables() -> Result<()> {
     let pool = get_db_pool().await?;
     sqlx::query(include_str!("./sql/blockheaders_table.sql"))
