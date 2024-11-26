@@ -27,6 +27,7 @@ struct RpcRequest<'a, T> {
 }
 
 pub async fn get_latest_finalized_blocknumber(timeout: Option<u64>) -> Result<i64> {
+    // TODO: Id should be different on every request, this is how request are identified by us and by the node.
     let params = RpcRequest {
         jsonrpc: "2.0",
         id: "0",
@@ -96,9 +97,9 @@ async fn make_rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
                 Ok(parsed) => Ok(parsed.result),
                 Err(e) => {
                     eprintln!(
-                        "Deserialization error: {:?}\nResponse snippet: {:.100}",
+                        "Deserialization error: {:?}\nResponse snippet: {:?}",
                         e,
-                        text // Log the first 100 characters of the response for debugging
+                        text // Log the entire response
                     );
                     Err(e.into())
                 }

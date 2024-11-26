@@ -1,5 +1,5 @@
 pub mod commands;
 pub mod db;
-pub mod endpoints;
 pub mod router;
+pub mod rpc;
 pub mod types;

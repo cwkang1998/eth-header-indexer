@@ -3,8 +3,8 @@ use fossil_headers_db as _;
 
 mod commands;
 mod db;
-mod endpoints;
 mod router;
+mod rpc;
 mod types;
 
 use clap::{Parser, ValueEnum};
@@ -44,6 +44,7 @@ enum Mode {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // TODO: Load environment variables if its dev mode
     dotenvy::dotenv().ok();
 
     // Initialize tracing subscriber

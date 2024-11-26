@@ -12,6 +12,9 @@ use tokio::sync::OnceCell;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
+#[cfg(test)]
+mod db_test;
+
 static DB_POOL: OnceCell<Arc<Pool<Postgres>>> = OnceCell::const_new();
 pub const DB_MAX_CONNECTIONS: u32 = 50;
 
@@ -113,6 +116,42 @@ pub async fn find_first_gap(start: i64, end: i64) -> Result<Option<i64>> {
     Ok(result.map(|r| r.0))
 }
 
+/**
+ * This finds the null data by querying the blockheaders table.
+ * Included fields is based on the reth primitives defined in https://reth.rs/docs/reth_primitives/struct.Header.html
+ */
+pub async fn find_null_data(start: i64, end: i64) -> Result<Vec<i64>> {
+    let pool = get_db_pool().await.context("Failed to get database pool")?;
+    let result: Vec<(i64,)> = sqlx::query_as(
+        r#"
+        SELECT number FROM blockheaders
+            WHERE (block_hash IS NULL
+            OR gas_limit IS NULL
+            OR gas_used IS NULL
+            OR nonce IS NULL
+            OR transaction_root IS NULL
+            OR receipts_root IS NULL
+            OR state_root IS NULL
+            OR parent_hash IS NULL
+            OR logs_bloom IS NULL
+            OR difficulty IS NULL
+            OR totalDifficulty IS NULL
+            OR timestamp IS NULL
+            OR extra_data IS NULL
+            OR mix_hash IS NULL)
+            AND number BETWEEN $1 AND $2
+            ORDER BY number ASC
+        "#,
+    )
+    .bind(start)
+    .bind(end)
+    .fetch_all(&*pool)
+    .await
+    .context("Failed to find any null data")?;
+
+    Ok(result.iter().map(|row| row.0).collect())
+}
+
 pub async fn write_blockheader(block_header: BlockHeaderWithFullTransaction) -> Result<()> {
     let pool = get_db_pool().await?;
     let mut tx = pool.begin().await?;
@@ -201,6 +240,7 @@ pub async fn write_blockheader(block_header: BlockHeaderWithFullTransaction) -> 
 
     // Insert transactions
     if !block_header.transactions.is_empty() {
+        // TODO: probably need a on conflict clause here too.
         let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
             "INSERT INTO transactions (
                 block_number, transaction_hash, transaction_index,
