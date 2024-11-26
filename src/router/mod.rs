@@ -13,6 +13,7 @@ mod handlers;
 pub async fn initialize_router(should_terminate: Arc<AtomicBool>) -> Result<()> {
     let app = Router::new().route("/", get(|| async { "Healthy" }));
 
+    // Should instead not use dotenvy for prod.
     let listener: TcpListener =
         TcpListener::bind(dotenvy::var("ROUTER_ENDPOINT").expect("ROUTER_ENDPOINT must be set"))
             .await?;

@@ -7,7 +7,7 @@ use tokio::task;
 use tracing::{error, info, warn};
 
 use crate::db;
-use crate::endpoints;
+use crate::rpc;
 
 const MAX_RETRIES: u64 = 10;
 
@@ -32,7 +32,8 @@ pub async fn fill_gaps(
         return Ok(());
     }
 
-    fill_missing_blocks_in_range(range_start_pointer, range_end, &should_terminate).await
+    fill_missing_blocks_in_range(range_start_pointer, range_end, &should_terminate).await?;
+    fill_null_rows(range_start_pointer, range_end, &should_terminate).await
 }
 
 async fn fill_missing_blocks_in_range(
@@ -44,6 +45,7 @@ async fn fill_missing_blocks_in_range(
     for _ in 0..MAX_RETRIES {
         while !should_terminate.load(Ordering::Relaxed) && range_start_pointer <= search_end {
             range_end_pointer = search_end.min(range_start_pointer + 100_000 - 1);
+            // Find gaps in block number
             match db::find_first_gap(range_start_pointer, range_end_pointer).await? {
                 Some(block_number) => {
                     info!("[fill_gaps] Found missing block number: {}", block_number);
@@ -64,9 +66,50 @@ async fn fill_missing_blocks_in_range(
     Ok(())
 }
 
+async fn fill_null_rows(
+    search_start: i64,
+    search_end: i64,
+    should_terminate: &AtomicBool,
+) -> Result<()> {
+    let mut range_start_pointer: i64 = search_start;
+    let mut range_end_pointer: i64;
+
+    while !should_terminate.load(Ordering::Relaxed) && range_start_pointer <= search_end {
+        println!("or this?");
+
+        range_end_pointer = search_end.min(range_start_pointer + 100_000 - 1);
+
+        // Find null data in the database
+        let null_data_vec = db::find_null_data(range_start_pointer, range_end_pointer).await?;
+        for null_data_block_number in null_data_vec {
+            info!(
+                "[fill_gaps] Found null values for block number: {}",
+                null_data_block_number
+            );
+
+            // Logic from process_missing_block
+            for i in 0..MAX_RETRIES {
+                match rpc::get_full_block_by_number(null_data_block_number, Some(TIMEOUT)).await {
+                    Ok(block) => {
+                        db::write_blockheader(block).await?;
+                        info!("[fill_gaps] Successfully wrote block {null_data_block_number} after {i} retries");
+                        range_start_pointer = null_data_block_number + 1;
+                    }
+                    Err(e) => {
+                        warn!("[fill_gaps] Error retrieving block {null_data_block_number}: {e}")
+                    }
+                }
+                let backoff: u64 = (i).pow(2) * 5;
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn process_missing_block(block_number: i64, range_start_pointer: &mut i64) -> Result<bool> {
     for i in 0..MAX_RETRIES {
-        match endpoints::get_full_block_by_number(block_number, Some(TIMEOUT)).await {
+        match rpc::get_full_block_by_number(block_number, Some(TIMEOUT)).await {
             Ok(block) => {
                 db::write_blockheader(block).await?;
                 *range_start_pointer = block_number + 1;
@@ -132,8 +175,7 @@ async fn chain_update_blocks(
                 break;
             }
 
-            let new_latest_block =
-                endpoints::get_latest_finalized_blocknumber(Some(TIMEOUT)).await?;
+            let new_latest_block = rpc::get_latest_finalized_blocknumber(Some(TIMEOUT)).await?;
             if new_latest_block > last_block {
                 range_start = last_block + 1;
                 last_block = new_latest_block;
@@ -193,7 +235,7 @@ async fn update_blocks(
 
 async fn process_block(block_number: i64) -> Result<()> {
     for i in 0..MAX_RETRIES {
-        match endpoints::get_full_block_by_number(block_number, Some(TIMEOUT)).await {
+        match rpc::get_full_block_by_number(block_number, Some(TIMEOUT)).await {
             Ok(block) => match db::write_blockheader(block).await {
                 Ok(_) => {
                     if i > 0 {
@@ -230,7 +272,7 @@ async fn get_first_missing_block(start: Option<i64>) -> Result<i64> {
 }
 
 async fn get_last_block(end: Option<i64>) -> Result<i64> {
-    let latest_block: i64 = endpoints::get_latest_finalized_blocknumber(Some(TIMEOUT))
+    let latest_block: i64 = rpc::get_latest_finalized_blocknumber(Some(TIMEOUT))
         .await
         .context("Failed to get latest block number")?;
 

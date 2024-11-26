@@ -3,13 +3,12 @@ use fossil_headers_db as _;
 
 mod commands;
 mod db;
-mod endpoints;
 mod router;
+mod rpc;
 mod types;
 
 use clap::{Parser, ValueEnum};
 use core::cmp::min;
-use std::env;
 use eyre::{Context, Result};
 use futures::future::join;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,10 +44,8 @@ enum Mode {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment variables if its dev mode
-    if env::var("IS_DEV_ENV").is_ok() {
-        dotenvy::dotenv().ok();
-    }
+    // TODO: Load environment variables if its dev mode
+    dotenvy::dotenv().ok();
 
     // Initialize tracing subscriber
     fmt().with_env_filter(EnvFilter::from_default_env()).init();
