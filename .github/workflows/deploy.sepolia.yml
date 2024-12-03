@@ -1,0 +1,36 @@
+name: Deploy to Remote Server
+
+on:
+  push:
+    branches:
+      - sepolia-db
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH into Remote Server and Deploy Changes
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ec2-3-87-142-202.compute-1.amazonaws.com
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: 22
+          script: |
+            # Navigate to the project directory
+            cd ~/fossil-headers-db
+
+            # Pull the latest changes from the main branch
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Ensure Docker and Docker Compose are installed
+            docker --version || { echo "Docker not found"; exit 1; }
+            docker-compose --version || { echo "Docker Compose not found"; exit 1; }
+
+            # Build and run the Docker Compose services for Sepolia
+            docker-compose -f docker-compose.sepolia.yml down
+            docker-compose -f docker-compose.sepolia.yml build --no-cache
+            docker-compose -f docker-compose.sepolia.yml up -d
