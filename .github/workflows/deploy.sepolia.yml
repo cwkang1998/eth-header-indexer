@@ -16,8 +16,8 @@ jobs:
           SEPOLIA_DB_STRING: ${{ secrets.SEPOLIA_DB_STRING }}
           SEPOLIA_NODE_STRING: ${{ secrets.SEPOLIA_NODE_STRING }}
           SEPOLIA_ROUTER_ENDPOINT: ${{ secrets.SEPOLIA_ROUTER_ENDPOINT }}
-          SEPOLIA_POSTGRES_USER: ${{ secrets.SEPOLIA_POSTGRES_USER }}
-          SEPOLIA_POSTGRES_PASSWORD: ${{ secrets.SEPOLIA_POSTGRES_PASSWORD }}
+          SEPOLIA_POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          SEPOLIA_POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           SEPOLIA_POSTGRES_DB: ${{ secrets.SEPOLIA_POSTGRES_DB }}
         with:
           host: ec2-3-87-142-202.compute-1.amazonaws.com
