@@ -3,7 +3,7 @@ name: Deploy to Sepolia Test Environment
 on:
   push:
     branches:
-      - sepolia-db # or sepolia-test, develop, staging, etc.
+      - sepolia-db
 
 jobs:
   deploy:
@@ -12,19 +12,37 @@ jobs:
     steps:
       - name: SSH into Remote Server and Deploy Changes
         uses: appleboy/ssh-action@v1.1.0
+        env:
+          SEPOLIA_DB_STRING: ${{ secrets.SEPOLIA_DB_STRING }}
+          SEPOLIA_NODE_STRING: ${{ secrets.SEPOLIA_NODE_STRING }}
+          SEPOLIA_ROUTER_ENDPOINT: ${{ secrets.SEPOLIA_ROUTER_ENDPOINT }}
+          SEPOLIA_POSTGRES_USER: ${{ secrets.SEPOLIA_POSTGRES_USER }}
+          SEPOLIA_POSTGRES_PASSWORD: ${{ secrets.SEPOLIA_POSTGRES_PASSWORD }}
+          SEPOLIA_POSTGRES_DB: ${{ secrets.SEPOLIA_POSTGRES_DB }}
         with:
           host: ec2-3-87-142-202.compute-1.amazonaws.com
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
+          envs: SEPOLIA_DB_STRING,SEPOLIA_NODE_STRING,SEPOLIA_ROUTER_ENDPOINT,SEPOLIA_POSTGRES_USER,SEPOLIA_POSTGRES_PASSWORD,SEPOLIA_POSTGRES_DB
           script: |
             # Navigate to the project directory
             cd ~/fossil-headers-db
 
-            # Pull the latest changes from the sepolia-db branch
+            # Pull the latest changes from the sepolia branch
             git fetch origin sepolia-db
             git reset --hard origin/sepolia-db
+
+            # Create or update .env file with the environment variables
+            cat > .env << EOL
+            SEPOLIA_DB_STRING=${SEPOLIA_DB_STRING}
+            SEPOLIA_NODE_STRING=${SEPOLIA_NODE_STRING}
+            SEPOLIA_ROUTER_ENDPOINT=${SEPOLIA_ROUTER_ENDPOINT}
+            SEPOLIA_POSTGRES_USER=${SEPOLIA_POSTGRES_USER}
+            SEPOLIA_POSTGRES_PASSWORD=${SEPOLIA_POSTGRES_PASSWORD}
+            SEPOLIA_POSTGRES_DB=${SEPOLIA_POSTGRES_DB}
+            EOL
 
             # Ensure Docker and Docker Compose are installed
             docker --version || { echo "Docker not found"; exit 1; }
