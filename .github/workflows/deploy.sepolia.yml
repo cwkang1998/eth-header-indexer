@@ -1,9 +1,9 @@
-name: Deploy to Remote Server
+name: Deploy to Sepolia Test Environment
 
 on:
   push:
     branches:
-      - sepolia-db
+      - sepolia-db # or sepolia-test, develop, staging, etc.
 
 jobs:
   deploy:
@@ -22,9 +22,9 @@ jobs:
             # Navigate to the project directory
             cd ~/fossil-headers-db
 
-            # Pull the latest changes from the main branch
-            git fetch origin main
-            git reset --hard origin/main
+            # Pull the latest changes from the sepolia-db branch
+            git fetch origin sepolia-db
+            git reset --hard origin/sepolia-db
 
             # Ensure Docker and Docker Compose are installed
             docker --version || { echo "Docker not found"; exit 1; }
