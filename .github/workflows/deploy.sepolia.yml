@@ -30,12 +30,12 @@ jobs:
             docker --version || { echo "Docker not found"; exit 1; }
             docker-compose --version || { echo "Docker Compose not found"; exit 1; }
 
-            # Stop any existing Sepolia services
-            docker-compose --project-name sepolia down
+            # Stop existing Sepolia services
+            docker-compose -f docker-compose.sepolia.yml --project-name sepolia down
 
             # Build and deploy Sepolia services
-            docker-compose --env-file .env.sepolia --project-name sepolia build --no-cache
-            docker-compose --env-file .env.sepolia --project-name sepolia up -d
+            docker-compose -f docker-compose.sepolia.yml --env-file .env.sepolia --project-name sepolia build --no-cache
+            docker-compose -f docker-compose.sepolia.yml --env-file .env.sepolia --project-name sepolia up -d
 
             # Verify running services
             docker ps

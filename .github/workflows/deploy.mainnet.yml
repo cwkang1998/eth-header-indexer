@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: SSH into the remote server and run deployment commands
       - name: SSH into Remote Server and Deploy Changes
         uses: appleboy/ssh-action@v1.1.0
         with:
@@ -31,17 +30,12 @@ jobs:
             docker --version || { echo "Docker not found"; exit 1; }
             docker-compose --version || { echo "Docker Compose not found"; exit 1; }
 
-            # Stop existing services
-            docker-compose --project-name mainnet down
-            docker-compose --project-name sepolia down
+            # Stop existing Mainnet services
+            docker-compose -f docker-compose.mainnet.yml --project-name mainnet down
 
-            # Build and deploy Mainnet
-            docker-compose --env-file .env.mainnet --project-name mainnet build --no-cache
-            docker-compose --env-file .env.mainnet --project-name mainnet up -d
-
-            # Build and deploy Sepolia
-            docker-compose --env-file .env.sepolia --project-name sepolia build --no-cache
-            docker-compose --env-file .env.sepolia --project-name sepolia up -d
+            # Build and deploy Mainnet services
+            docker-compose -f docker-compose.mainnet.yml --env-file .env.mainnet --project-name mainnet build --no-cache
+            docker-compose -f docker-compose.mainnet.yml --env-file .env.mainnet --project-name mainnet up -d
 
             # Verify running services
             docker ps
