@@ -31,7 +31,17 @@ jobs:
             docker --version || { echo "Docker not found"; exit 1; }
             docker-compose --version || { echo "Docker Compose not found"; exit 1; }
 
-            # Build and run the Docker Compose services
-            docker-compose down
-            docker-compose build --no-cache
-            docker-compose up -d
+            # Stop existing services
+            docker-compose --project-name mainnet down
+            docker-compose --project-name sepolia down
+
+            # Build and deploy Mainnet
+            docker-compose --env-file .env.mainnet --project-name mainnet build --no-cache
+            docker-compose --env-file .env.mainnet --project-name mainnet up -d
+
+            # Build and deploy Sepolia
+            docker-compose --env-file .env.sepolia --project-name sepolia build --no-cache
+            docker-compose --env-file .env.sepolia --project-name sepolia up -d
+
+            # Verify running services
+            docker ps

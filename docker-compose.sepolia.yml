@@ -6,13 +6,13 @@ services:
       dockerfile: Dockerfile.update
       context: .
     ports:
-      - "8082:8080"
+      - "8082:8080"  # Sepolia-specific port
     networks:
       - sepolia_network
     environment:
-      - DB_CONNECTION_STRING=${SEPOLIA_DB_STRING}
-      - NODE_CONNECTION_STRING=${SEPOLIA_NODE_STRING}
-      - ROUTER_ENDPOINT=${SEPOLIA_ROUTER_ENDPOINT}
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
+      - ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
       - RUST_LOG=info
     depends_on:
       db:
@@ -25,9 +25,9 @@ services:
     networks:
       - sepolia_network
     environment:
-      - DB_CONNECTION_STRING=${SEPOLIA_DB_STRING}
-      - NODE_CONNECTION_STRING=${SEPOLIA_NODE_STRING}
-      - ROUTER_ENDPOINT=${SEPOLIA_ROUTER_ENDPOINT}
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING}
+      - ROUTER_ENDPOINT=${ROUTER_ENDPOINT}
       - RUST_LOG=info
       - INTERVAL=${FIX_INTERVAL:-300}
     depends_on:
@@ -37,15 +37,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=${SEPOLIA_POSTGRES_USER}
-      - POSTGRES_PASSWORD=${SEPOLIA_POSTGRES_PASSWORD}
-      - POSTGRES_DB=${SEPOLIA_POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Sepolia-specific port
     networks:
       - sepolia_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${SEPOLIA_POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
