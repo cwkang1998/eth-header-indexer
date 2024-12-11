@@ -7,11 +7,12 @@ use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tracing::error;
 
 static CLIENT: Lazy<Client> = Lazy::new(Client::new);
 static NODE_CONNECTION_STRING: Lazy<Option<String>> = Lazy::new(|| {
     dotenvy::var("NODE_CONNECTION_STRING")
-        .map_err(|e| eprintln!("Failed to get NODE_CONNECTION_STRING: {}", e))
+        .map_err(|e| error!("Failed to get NODE_CONNECTION_STRING: {}", e))
         .ok()
 });
 
@@ -83,7 +84,7 @@ async fn make_rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
     let raw_response = match raw_response {
         Ok(response) => response,
         Err(e) => {
-            eprintln!("HTTP request error: {:?}", e);
+            error!("HTTP request error: {:?}", e);
             return Err(e.into());
         }
     };
@@ -96,7 +97,7 @@ async fn make_rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
             match serde_json::from_str::<RpcResponse<R>>(&text) {
                 Ok(parsed) => Ok(parsed.result),
                 Err(e) => {
-                    eprintln!(
+                    error!(
                         "Deserialization error: {:?}\nResponse snippet: {:?}",
                         e,
                         text // Log the entire response
@@ -106,7 +107,7 @@ async fn make_rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
             }
         }
         Err(e) => {
-            eprintln!("Failed to read response body: {:?}", e);
+            error!("Failed to read response body: {:?}", e);
             Err(e.into())
         }
     }
