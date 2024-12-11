@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - sepolia-db
   pull_request:
     branches:
       - main
+      - sepolia-db
 
 jobs:
   rust-ci:
