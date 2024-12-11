@@ -42,20 +42,19 @@ async fn fill_missing_blocks_in_range(
         while !should_terminate.load(Ordering::Relaxed) && range_start_pointer <= search_end {
             range_end_pointer = search_end.min(range_start_pointer + 100_000 - 1);
             // Find gaps in block number
-            match db::find_first_gap(range_start_pointer, range_end_pointer).await? {
-                Some(block_number) => {
-                    info!("[fill_gaps] Found missing block number: {}", block_number);
-                    if process_missing_block(block_number, &mut range_start_pointer).await? {
-                        range_start_pointer = block_number + 1;
-                    }
+            if let Some(block_number) =
+                db::find_first_gap(range_start_pointer, range_end_pointer).await?
+            {
+                info!("[fill_gaps] Found missing block number: {}", block_number);
+                if process_missing_block(block_number, &mut range_start_pointer).await? {
+                    range_start_pointer = block_number + 1;
                 }
-                None => {
-                    info!(
-                        "[fill_gaps] No missing values found from {} to {}",
-                        range_start_pointer, range_end_pointer
-                    );
-                    range_start_pointer = range_end_pointer + 1
-                }
+            } else {
+                info!(
+                    "[fill_gaps] No missing values found from {} to {}",
+                    range_start_pointer, range_end_pointer
+                );
+                range_start_pointer = range_end_pointer + 1
             }
         }
     }

@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 static CLIENT: Lazy<Client> = Lazy::new(Client::new);
-static NODE_CONNECTION_STRING: Lazy<String> = Lazy::new(|| {
-    dotenvy::var("NODE_CONNECTION_STRING").expect("NODE_CONNECTION_STRING must be set")
+static NODE_CONNECTION_STRING: Lazy<Option<String>> = Lazy::new(|| {
+    dotenvy::var("NODE_CONNECTION_STRING")
+        .map_err(|e| eprintln!("Failed to get NODE_CONNECTION_STRING: {}", e))
+        .ok()
 });
 
 #[derive(Deserialize, Debug)]
@@ -39,7 +41,7 @@ pub async fn get_latest_finalized_blocknumber(timeout: Option<u64>) -> Result<i6
         .await
         .context("Failed to get latest block number")
     {
-        Ok(blockheader) => Ok(convert_hex_string_to_i64(&blockheader.number)),
+        Ok(blockheader) => Ok(convert_hex_string_to_i64(&blockheader.number)?),
         Err(e) => Err(e),
     }
 }
@@ -62,22 +64,20 @@ async fn make_rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
     params: &T,
     timeout: Option<u64>,
 ) -> Result<R> {
+    let connection_string = (*NODE_CONNECTION_STRING)
+        .as_ref()
+        .ok_or_else(|| eyre::eyre!("NODE_CONNECTION_STRING not set"))?;
+
     let raw_response = match timeout {
         Some(seconds) => {
             CLIENT
-                .post(NODE_CONNECTION_STRING.as_str())
+                .post(connection_string)
                 .timeout(Duration::from_secs(seconds))
                 .json(params)
                 .send()
                 .await
         }
-        None => {
-            CLIENT
-                .post(NODE_CONNECTION_STRING.as_str())
-                .json(params)
-                .send()
-                .await
-        }
+        None => CLIENT.post(connection_string).json(params).send().await,
     };
 
     let raw_response = match raw_response {

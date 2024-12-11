@@ -3,6 +3,7 @@ use crate::types::BlockHeaderWithFullTransaction;
 use eyre::{Context, Error, Result};
 use futures::FutureExt;
 use sqlx::postgres::PgConnectOptions;
+use sqlx::query_builder::Separated;
 use sqlx::ConnectOptions;
 use sqlx::QueryBuilder;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -19,24 +20,26 @@ static DB_POOL: OnceCell<Arc<Pool<Postgres>>> = OnceCell::const_new();
 pub const DB_MAX_CONNECTIONS: u32 = 50;
 
 pub async fn get_db_pool() -> Result<Arc<Pool<Postgres>>> {
-    match DB_POOL.get() {
-        Some(pool) => Ok(pool.clone()),
-        None => {
-            let mut conn_options: PgConnectOptions = dotenvy::var("DB_CONNECTION_STRING")
-                .expect("DB_CONNECTION_STRING must be set")
-                .parse()?;
-            conn_options = conn_options
-                .log_slow_statements(tracing::log::LevelFilter::Debug, Duration::new(120, 0));
+    if let Some(pool) = DB_POOL.get() {
+        Ok(pool.clone())
+    } else {
+        let mut conn_options: PgConnectOptions = dotenvy::var("DB_CONNECTION_STRING")
+            .context("DB_CONNECTION_STRING must be set")?
+            .parse()?;
+        conn_options = conn_options
+            .log_slow_statements(tracing::log::LevelFilter::Debug, Duration::new(120, 0));
 
-            let pool = PgPoolOptions::new()
-                .max_connections(DB_MAX_CONNECTIONS)
-                .connect_with(conn_options)
-                .await?;
-            let arc_pool = Arc::new(pool);
-            match DB_POOL.set(arc_pool.clone()) {
-                Ok(_) => Ok(arc_pool),
-                Err(_) => Ok(DB_POOL.get().expect("Pool was just set").clone()),
-            }
+        let pool = PgPoolOptions::new()
+            .max_connections(DB_MAX_CONNECTIONS)
+            .connect_with(conn_options)
+            .await?;
+        let arc_pool = Arc::new(pool);
+        match DB_POOL.set(arc_pool.clone()) {
+            Ok(_) => Ok(arc_pool),
+            Err(_) => DB_POOL
+                .get()
+                .ok_or_else(|| eyre::eyre!("Failed to get database pool after initialization"))
+                .map(Clone::clone),
         }
     }
 }
@@ -183,9 +186,9 @@ pub async fn write_blockheader(block_header: BlockHeaderWithFullTransaction) -> 
         "#,
     )
     .bind(&block_header.hash)
-    .bind(convert_hex_string_to_i64(&block_header.number))
-    .bind(convert_hex_string_to_i64(&block_header.gas_limit))
-    .bind(convert_hex_string_to_i64(&block_header.gas_used))
+    .bind(convert_hex_string_to_i64(&block_header.number)?)
+    .bind(convert_hex_string_to_i64(&block_header.gas_limit)?)
+    .bind(convert_hex_string_to_i64(&block_header.gas_used)?)
     .bind(&block_header.base_fee_per_gas)
     .bind(&block_header.nonce)
     .bind(&block_header.transactions_root)
@@ -197,7 +200,7 @@ pub async fn write_blockheader(block_header: BlockHeaderWithFullTransaction) -> 
     .bind(&block_header.difficulty)
     .bind(&block_header.total_difficulty)
     .bind(&block_header.sha3_uncles)
-    .bind(convert_hex_string_to_i64(&block_header.timestamp))
+    .bind(convert_hex_string_to_i64(&block_header.timestamp)?)
     .bind(&block_header.extra_data)
     .bind(&block_header.mix_hash)
     .bind(&block_header.withdrawals_root)
@@ -236,20 +239,27 @@ pub async fn write_blockheader(block_header: BlockHeaderWithFullTransaction) -> 
             ) ",
         );
 
-        query_builder.push_values(block_header.transactions.iter(), |mut b, tx| {
-            b.push_bind(convert_hex_string_to_i64(&tx.block_number))
-                .push_bind(&tx.hash)
-                .push_bind(convert_hex_string_to_i64(&tx.transaction_index))
-                .push_bind(&tx.from)
-                .push_bind(&tx.to)
-                .push_bind(&tx.value)
-                // Use "0" as the default value if gas_price is None
-                .push_bind(tx.gas_price.as_deref().unwrap_or("0"))
-                .push_bind(tx.max_priority_fee_per_gas.as_deref().unwrap_or("0"))
-                .push_bind(tx.max_fee_per_gas.as_deref().unwrap_or("0"))
-                .push_bind(&tx.gas)
-                .push_bind(&tx.chain_id);
-        });
+        query_builder.push_values(
+            block_header.transactions.iter(),
+            |mut b: Separated<'_, '_, Postgres, &'static str>, tx| {
+                // Convert values and unwrap_or_default() to handle errors
+                let tx_block_number =
+                    convert_hex_string_to_i64(&tx.block_number).unwrap_or_default();
+                let tx_index = convert_hex_string_to_i64(&tx.transaction_index).unwrap_or_default();
+
+                b.push_bind(tx_block_number)
+                    .push_bind(&tx.hash)
+                    .push_bind(tx_index)
+                    .push_bind(&tx.from)
+                    .push_bind(&tx.to)
+                    .push_bind(&tx.value)
+                    .push_bind(tx.gas_price.as_deref().unwrap_or("0"))
+                    .push_bind(tx.max_priority_fee_per_gas.as_deref().unwrap_or("0"))
+                    .push_bind(tx.max_fee_per_gas.as_deref().unwrap_or("0"))
+                    .push_bind(&tx.gas)
+                    .push_bind(&tx.chain_id);
+            },
+        );
 
         query_builder.push(" ON CONFLICT (transaction_hash) DO NOTHING");
 
@@ -298,8 +308,7 @@ fn is_transient_error(e: &Error) -> bool {
     // Check for database connection errors
     if let Some(db_err) = e.downcast_ref::<sqlx::Error>() {
         match db_err {
-            sqlx::Error::Io(_) => true,
-            sqlx::Error::PoolTimedOut => true,
+            sqlx::Error::Io(_) | sqlx::Error::PoolTimedOut => true,
             sqlx::Error::Database(db_err) => {
                 // Check database-specific error codes if needed
                 db_err.code().map_or(false, |code| {

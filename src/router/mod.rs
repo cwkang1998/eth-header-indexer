@@ -27,11 +27,18 @@ pub async fn initialize_router(should_terminate: Arc<AtomicBool>) -> Result<()> 
     );
 
     // Should instead not use dotenvy for prod.
-    let listener: TcpListener =
-        TcpListener::bind(dotenvy::var("ROUTER_ENDPOINT").expect("ROUTER_ENDPOINT must be set"))
-            .await?;
+    let listener: TcpListener = TcpListener::bind(
+        dotenvy::var("ROUTER_ENDPOINT")
+            .map_err(|e| eyre::eyre!("ROUTER_ENDPOINT must be set: {}", e))?,
+    )
+    .await?;
 
-    info!("->> LISTENING on {}\n", listener.local_addr().unwrap());
+    info!(
+        "->> LISTENING on {}\n",
+        listener
+            .local_addr()
+            .map_err(|e| eyre::eyre!("Failed to get local address: {}", e))?
+    );
     axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(shutdown_signal(should_terminate.clone()))
         .await?;
