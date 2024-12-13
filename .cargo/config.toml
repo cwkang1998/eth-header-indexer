@@ -1,4 +1,3 @@
-[rustflags]
 [target.'cfg(all())']
 rustflags = [
     "-W",
