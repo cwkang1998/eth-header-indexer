@@ -1,5 +1,5 @@
-use crate::types::type_utils::convert_hex_string_to_i64;
-use crate::types::BlockHeaderWithFullTransaction;
+use crate::rpc::BlockHeaderWithFullTransaction;
+use crate::utils::convert_hex_string_to_i64;
 use eyre::{Context, Error, Result};
 use futures::FutureExt;
 use sqlx::postgres::PgConnectOptions;
@@ -13,12 +13,12 @@ use tokio::sync::OnceCell;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-#[cfg(test)]
 mod db_test;
 
 static DB_POOL: OnceCell<Arc<Pool<Postgres>>> = OnceCell::const_new();
 pub const DB_MAX_CONNECTIONS: u32 = 50;
 
+// TODO: Not use a oncecell but instead use some sort of DI for easier testing.
 pub async fn get_db_pool() -> Result<Arc<Pool<Postgres>>> {
     if let Some(pool) = DB_POOL.get() {
         Ok(pool.clone())
@@ -304,6 +304,7 @@ where
     }
 }
 
+#[allow(clippy::all)]
 fn is_transient_error(e: &Error) -> bool {
     // Check for database connection errors
     if let Some(db_err) = e.downcast_ref::<sqlx::Error>() {
@@ -322,3 +323,34 @@ fn is_transient_error(e: &Error) -> bool {
         false
     }
 }
+
+#[derive(Debug)]
+pub struct DbConnection {
+    pub pool: Pool<Postgres>,
+}
+
+impl DbConnection {
+    // TODO: allow dead code for now. Adding tests in future PRs should allow us to remove this.
+    #[allow(dead_code)]
+    pub async fn new(db_conn_string: Option<String>) -> Result<Arc<Self>> {
+        let mut conn_options: PgConnectOptions = match db_conn_string {
+            Some(conn_string) => conn_string.parse()?,
+            None => dotenvy::var("DB_CONNECTION_STRING")
+                .context("DB_CONNECTION_STRING must be set")?
+                .parse()?,
+        };
+
+        conn_options = conn_options
+            .log_slow_statements(tracing::log::LevelFilter::Debug, Duration::new(120, 0));
+
+        let pool = PgPoolOptions::new()
+            .max_connections(DB_MAX_CONNECTIONS)
+            .connect_with(conn_options)
+            .await?;
+
+        Ok(Arc::new(Self { pool }))
+    }
+}
+
+#[cfg(test)]
+mod tests {}
