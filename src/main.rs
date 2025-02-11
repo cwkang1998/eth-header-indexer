@@ -1,4 +1,3 @@
-#![deny(unused_crate_dependencies)]
 use fossil_headers_db as _;
 
 mod commands;
@@ -45,7 +44,6 @@ enum Mode {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // TODO: Load environment variables if its dev mode
     dotenvy::dotenv().ok();
 
     // Initialize tracing subscriber
