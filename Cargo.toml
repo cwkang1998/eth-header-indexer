@@ -7,8 +7,7 @@ default-run = "fossil_headers_db"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-std = "1.12.0"
-axum = { version = "0.7.5", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 clap = { version = "4.5.7", features = ["derive"] }
 ctrlc = "3.4.4"
 dotenvy = "0.15.7"
@@ -16,7 +15,7 @@ futures = "0.3.30"
 futures-util = "0.3.30"
 reqwest = { version = "0.12.4", features = ["json"] }
 serde = "1.0.203"
-sqlx = { version = "0.8.2", features = [
+sqlx = { version = "0.8.6", features = [
     "runtime-tokio",
     "postgres",
     "chrono",
@@ -27,13 +26,16 @@ chrono = { version = "0.4.38", features = ["serde"] }
 tokio = { version = "1.38.0", features = ["rt", "rt-multi-thread", "macros"] }
 tracing = "0.1.40"
 eyre = "0.6.10"
-once_cell = "1.1.0"
+thiserror = "2.0"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 serde_json = "1.0.105"
 
 [dev-dependencies]
 serial_test = "3.2.0"
-testcontainers-modules = { version = "0.11.5", features = ["postgres"] }
+testcontainers-modules = { version = "0.12", features = ["postgres"] }
+mockall = "0.13.0"
+async-trait = "0.1.83"
+proptest = "1.5.0"
 
 
 [[bin]]
@@ -43,3 +45,56 @@ path = "src/main.rs"
 [[bin]]
 name = "fossil_indexer"
 path = "src/indexer/main.rs"
+
+[lints.rust]
+# Deny unsafe code patterns
+unsafe_code = "forbid"
+# Allow missing docs for now (too many to fix at once)
+missing_docs = "allow"
+# Warn on unused items
+unused = { level = "warn", priority = -1 }
+# Warn on deprecated features
+deprecated = "warn"
+# Deny future incompatible patterns
+future_incompatible = { level = "deny", priority = -1 }
+
+[lints.clippy]
+# Enable pedantic lints for high code quality (but as warnings, not errors)
+pedantic = { level = "warn", priority = -1 }
+# Enable nursery lints for cutting-edge patterns (but as warnings)
+nursery = { level = "warn", priority = -1 }
+
+# Core safety and correctness (deny these)
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+
+# Quality lints (warn only)
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+
+# Blockchain/crypto specific safety lints
+arithmetic_side_effects = "allow" # Too many false positives in property tests        # Precision issues in financial calculations
+print_stdout = "warn"             # Prefer structured logging
+print_stderr = "warn"             # Prefer structured logging
+dbg_macro = "warn"                # Remove debug prints in production
+todo = "warn"                     # Track TODOs
+unimplemented = "warn"            # Track unfinished code
+panic = "warn"                    # Prefer Result types
+unwrap_used = "warn"              # Prefer proper error handling
+expect_used = "warn"              # Prefer proper error handling
+
+# Documentation and API design
+missing_docs_in_private_items = "allow" # Don't require docs for private items
+missing_errors_doc = "allow"            # Allow missing error docs for now
+missing_panics_doc = "allow"            # Allow missing panic docs for now
+missing_safety_doc = "warn"             # Document unsafe code
+
+# Performance and efficiency
+needless_collect = "warn"
+redundant_clone = "warn"
+redundant_allocation = "warn"
+large_types_passed_by_value = "warn"
+
+# Security and robustness
+map_unwrap_or = "warn" # Renamed from option_map_unwrap_or variants

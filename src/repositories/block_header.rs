@@ -1,4 +1,4 @@
-use eyre::{ContextCompat, Result};
+use crate::errors::{BlockchainError, Result};
 use sqlx::{query_builder::Separated, Postgres, QueryBuilder};
 
 use crate::{
@@ -6,6 +6,10 @@ use crate::{
     utils::{convert_hex_string_to_i32, convert_hex_string_to_i64},
 };
 
+/// Internal data transfer object for transaction data.
+///
+/// This struct is used internally for database operations and is not part of the public API.
+#[doc(hidden)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct TransactionDto {
@@ -22,6 +26,10 @@ pub struct TransactionDto {
     pub chain_id: Option<String>,
 }
 
+/// Internal data transfer object for block header data.
+///
+/// This struct is used internally for database operations and is not part of the public API.
+#[doc(hidden)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct BlockHeaderDto {
@@ -58,18 +66,24 @@ fn convert_rpc_blockheader_to_dto(block_header: BlockHeader) -> Result<BlockHead
     let gas_limit = convert_hex_string_to_i64(&block_header.gas_limit)?;
     let gas_used = convert_hex_string_to_i64(&block_header.gas_used)?;
     let block_timestamp = convert_hex_string_to_i64(&block_header.timestamp)?;
-    let receipts_root = block_header
-        .receipts_root
-        .clone()
-        .context("receipt root should not be empty")?;
-    let state_root = block_header
-        .state_root
-        .clone()
-        .context("state root should not be empty")?;
-    let transaction_root = block_header
-        .transactions_root
-        .clone()
-        .context("transactions root should not be empty")?;
+    let receipts_root = block_header.receipts_root.clone().ok_or_else(|| {
+        BlockchainError::block_validation(
+            block_header.number.clone().parse().unwrap_or(-1),
+            "receipt root should not be empty",
+        )
+    })?;
+    let state_root = block_header.state_root.clone().ok_or_else(|| {
+        BlockchainError::block_validation(
+            block_header.number.clone().parse().unwrap_or(-1),
+            "state root should not be empty",
+        )
+    })?;
+    let transaction_root = block_header.transactions_root.clone().ok_or_else(|| {
+        BlockchainError::block_validation(
+            block_header.number.clone().parse().unwrap_or(-1),
+            "transactions root should not be empty",
+        )
+    })?;
 
     Ok(BlockHeaderDto {
         block_hash: block_header.hash.clone(),
@@ -91,14 +105,13 @@ fn convert_rpc_blockheader_to_dto(block_header: BlockHeader) -> Result<BlockHead
         withdrawals_root: block_header.withdrawals_root.clone(),
         blob_gas_used: block_header.blob_gas_used.clone(),
         excess_blob_gas: block_header.excess_blob_gas.clone(),
-        parent_beacon_block_root: block_header.parent_beacon_block_root.clone(),
+        parent_beacon_block_root: block_header.parent_beacon_block_root,
         receipts_root,
         state_root,
         transaction_root,
     })
 }
 
-#[allow(dead_code)]
 fn convert_rpc_transaction_to_dto(transaction: Transaction) -> Result<TransactionDto> {
     let block_number = convert_hex_string_to_i64(&transaction.block_number)?;
     let transaction_index = convert_hex_string_to_i32(&transaction.transaction_index)?;
@@ -110,17 +123,20 @@ fn convert_rpc_transaction_to_dto(transaction: Transaction) -> Result<Transactio
         from_addr: transaction.from.clone(),
         to_addr: transaction.to.clone(),
         value: transaction.value.clone(),
-        gas_price: transaction.gas_price.clone().unwrap_or("0".to_string()),
+        gas_price: transaction
+            .gas_price
+            .clone()
+            .unwrap_or_else(|| "0".to_string()),
         max_priority_fee_per_gas: transaction
             .max_priority_fee_per_gas
             .clone()
-            .unwrap_or("0".to_string()),
+            .unwrap_or_else(|| "0".to_string()),
         max_fee_per_gas: transaction
             .max_fee_per_gas
             .clone()
-            .unwrap_or("0".to_string()),
+            .unwrap_or_else(|| "0".to_string()),
         gas: transaction.gas.clone(),
-        chain_id: transaction.chain_id.clone(),
+        chain_id: transaction.chain_id,
     })
 }
 
@@ -133,7 +149,7 @@ pub async fn insert_block_header_query(
     let mut formatted_block_headers: Vec<BlockHeaderDto> = Vec::with_capacity(block_headers.len());
     let mut flattened_transactions = Vec::new();
 
-    for header in block_headers.iter() {
+    for header in &block_headers {
         let dto = convert_rpc_blockheader_to_dto(header.clone())?;
         formatted_block_headers.push(dto);
 
@@ -183,7 +199,7 @@ pub async fn insert_block_header_query(
     );
 
     query_builder.push(
-        r#"
+        r"
         ON CONFLICT (number)
             DO UPDATE SET
                 block_hash = EXCLUDED.block_hash,
@@ -206,7 +222,7 @@ pub async fn insert_block_header_query(
                 withdrawals_root = EXCLUDED.withdrawals_root,
                 blob_gas_used = EXCLUDED.blob_gas_used,
                 excess_blob_gas = EXCLUDED.excess_blob_gas,
-                parent_beacon_block_root = EXCLUDED.parent_beacon_block_root;"#,
+                parent_beacon_block_root = EXCLUDED.parent_beacon_block_root;",
     );
 
     query_builder.build().execute(&mut **db_tx).await?;
@@ -232,7 +248,7 @@ async fn insert_block_txs_query(
 
     // Pre-format and handle the potential error arising from the hex -> i64 conversion
     let mut formatted_transactions: Vec<TransactionDto> = Vec::with_capacity(transactions.len());
-    for transaction in transactions.iter() {
+    for transaction in &transactions {
         let dto = convert_rpc_transaction_to_dto(transaction.clone())?;
         formatted_transactions.push(dto);
     }
@@ -255,7 +271,7 @@ async fn insert_block_txs_query(
         },
     );
     query_builder.push(
-        r#"
+        r"
         ON CONFLICT (transaction_hash)
             DO UPDATE SET
                 block_number = EXCLUDED.block_number,
@@ -267,7 +283,7 @@ async fn insert_block_txs_query(
                 max_priority_fee_per_gas = EXCLUDED.max_priority_fee_per_gas,
                 max_fee_per_gas = EXCLUDED.max_fee_per_gas,
                 gas = EXCLUDED.gas,
-                chain_id = EXCLUDED.chain_id;"#,
+                chain_id = EXCLUDED.chain_id;",
     );
     query_builder.build().execute(&mut **db_tx).await?;
 
@@ -281,7 +297,7 @@ pub async fn insert_block_header_only_query(
 ) -> Result<()> {
     let mut formatted_block_headers: Vec<BlockHeaderDto> = Vec::with_capacity(block_headers.len());
 
-    for header in block_headers.iter() {
+    for header in &block_headers {
         let dto = convert_rpc_blockheader_to_dto(header.clone())?;
         formatted_block_headers.push(dto);
     }
@@ -326,7 +342,7 @@ pub async fn insert_block_header_only_query(
     );
 
     query_builder.push(
-        r#"
+        r"
         ON CONFLICT (number)
             DO UPDATE SET
                 block_hash = EXCLUDED.block_hash,
@@ -349,7 +365,7 @@ pub async fn insert_block_header_only_query(
                 withdrawals_root = EXCLUDED.withdrawals_root,
                 blob_gas_used = EXCLUDED.blob_gas_used,
                 excess_blob_gas = EXCLUDED.excess_blob_gas,
-                parent_beacon_block_root = EXCLUDED.parent_beacon_block_root;"#,
+                parent_beacon_block_root = EXCLUDED.parent_beacon_block_root;",
     );
 
     query_builder.build().execute(&mut **db_tx).await?;
@@ -368,7 +384,9 @@ mod tests {
     use super::*;
 
     fn get_test_db_connection() -> String {
-        env::var("DATABASE_URL").unwrap()
+        env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://postgres:postgres@localhost:5433/fossil_test".to_string()
+        })
     }
 
     fn assert_block_header_eq(header1: BlockHeaderDto, header2: BlockHeaderDto) {
@@ -454,7 +472,7 @@ mod tests {
             .unwrap();
 
         // Check if the block header was inserted
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[0].number).unwrap())
                 .fetch_one(&mut *tx)
@@ -484,7 +502,7 @@ mod tests {
             .unwrap();
 
         // Check if the first block is inserted
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[0].number).unwrap())
                 .fetch_one(&mut *tx)
@@ -497,7 +515,7 @@ mod tests {
         assert_block_header_eq(block_header_in_db, block_header_to_compare);
 
         // Check if the second block is inserted
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[1].number).unwrap())
                 .fetch_one(&mut *tx)
@@ -558,7 +576,7 @@ mod tests {
         assert!(result.is_ok());
 
         // See if its properly updated
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[0].number).unwrap())
                 .fetch_one(&mut *tx)
@@ -588,7 +606,7 @@ mod tests {
             .unwrap();
 
         // Check if the transactions are inserted
-        let result: Result<TransactionDto, sqlx::Error> =
+        let result: std::result::Result<TransactionDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM transactions WHERE transaction_hash = $1")
                 .bind(&transaction.hash)
                 .fetch_one(&mut *tx)
@@ -622,7 +640,7 @@ mod tests {
             .unwrap();
 
         // Check if the transactions are inserted
-        let result: Result<TransactionDto, sqlx::Error> =
+        let result: std::result::Result<TransactionDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM transactions WHERE transaction_hash = $1")
                 .bind(&transaction_1.hash)
                 .fetch_one(&mut *tx)
@@ -633,7 +651,7 @@ mod tests {
         let transaction_in_db = result.unwrap();
         assert_transactions_eq(transaction_in_db, transaction_to_compare);
 
-        let result: Result<TransactionDto, sqlx::Error> =
+        let result: std::result::Result<TransactionDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM transactions WHERE transaction_hash = $1")
                 .bind(&transaction_2.hash)
                 .fetch_one(&mut *tx)
@@ -695,7 +713,7 @@ mod tests {
         assert!(result.is_ok());
 
         // See if its properly updated
-        let result: Result<TransactionDto, sqlx::Error> =
+        let result: std::result::Result<TransactionDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM transactions WHERE transaction_hash = $1")
                 .bind(&transaction.hash)
                 .fetch_one(&mut *tx)
@@ -723,7 +741,7 @@ mod tests {
             .unwrap();
 
         // Check if the block header was inserted
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[0].number).unwrap())
                 .fetch_one(&mut *tx)
@@ -753,7 +771,7 @@ mod tests {
             .unwrap();
 
         // Check if the first block is inserted
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[0].number).unwrap())
                 .fetch_one(&mut *tx)
@@ -766,7 +784,7 @@ mod tests {
         assert_block_header_eq(block_header_in_db, block_header_to_compare);
 
         // Check if the second block is inserted
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[1].number).unwrap())
                 .fetch_one(&mut *tx)
@@ -829,7 +847,7 @@ mod tests {
         assert!(result.is_ok());
 
         // See if its properly updated
-        let result: Result<BlockHeaderDto, sqlx::Error> =
+        let result: std::result::Result<BlockHeaderDto, sqlx::Error> =
             sqlx::query_as("SELECT * FROM blockheaders WHERE number = $1")
                 .bind(convert_hex_string_to_i64(&block_headers[0].number).unwrap())
                 .fetch_one(&mut *tx)

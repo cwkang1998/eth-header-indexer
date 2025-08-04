@@ -1,20 +1,64 @@
-use crate::utils::convert_hex_string_to_i64;
-use eyre::{eyre, Context, Result};
-use once_cell::sync::Lazy;
+//! # Ethereum RPC Client
+//!
+//! This module provides functionality for interacting with Ethereum JSON-RPC endpoints to fetch
+//! blockchain data including block headers, transactions, and network state information.
+//!
+//! ## Key Features
+//!
+//! - **Resilient RPC Operations**: Built-in retry logic with exponential backoff
+//! - **Batch Processing**: Efficient batch fetching of multiple blocks
+//! - **Type Safety**: Strongly typed blockchain data structures
+//! - **Async/Await Support**: Fully asynchronous operations using Tokio
+//! - **Configurable Timeouts**: Per-request timeout configuration
+//!
+//! ## Architecture
+//!
+//! The module centers around the [`EthereumRpcProvider`] trait which defines the interface
+//! for blockchain data fetching. The primary implementation is [`EthereumJsonRpcClient`]
+//! which handles HTTP JSON-RPC communication with Ethereum nodes.
+//!
+//! ## Usage Examples
+//!
+//! ### Fetching Latest Block
+//! ```rust,no_run
+//! use fossil_headers_db::rpc::get_latest_finalized_blocknumber;
+//!
+//! # async fn example() -> eyre::Result<()> {
+//! let latest_block = get_latest_finalized_blocknumber(Some(30)).await?;
+//! println!("Latest finalized block: {}", latest_block.value());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Fetching Block Data
+//! ```rust,no_run
+//! use fossil_headers_db::rpc::get_full_block_by_number;
+//! use fossil_headers_db::types::BlockNumber;
+//!
+//! # async fn example() -> eyre::Result<()> {
+//! let block_number = BlockNumber::from_trusted(19000000);
+//! let block_data = get_full_block_by_number(block_number, Some(30)).await?;
+//! println!("Block hash: {}", block_data.hash);
+//! # Ok(())
+//! # }
+//! ```
+
+use crate::errors::{BlockchainError, Result};
+use crate::types::BlockNumber;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use std::{future::Future, time::Duration};
 use tokio::time::sleep;
 use tracing::{error, warn};
 
+#[cfg(test)]
+use serial_test::serial;
+
 // TODO: instead of keeping this static, make it passable as a dependency.
 // This should allow us to test this module.
-static CLIENT: Lazy<Client> = Lazy::new(Client::new);
-static NODE_CONNECTION_STRING: Lazy<Option<String>> = Lazy::new(|| {
-    dotenvy::var("NODE_CONNECTION_STRING")
-        .map_err(|e| error!("Failed to get NODE_CONNECTION_STRING: {}", e))
-        .ok()
-});
+static CLIENT: OnceLock<Client> = OnceLock::new();
+static NODE_CONNECTION_STRING: OnceLock<Option<String>> = OnceLock::new();
 
 // Arbitrarily set, can be set somewhere else.
 const MAX_RETRIES: u8 = 5;
@@ -144,7 +188,44 @@ pub struct BlockHeaderWithFullTransaction {
     pub parent_beacon_block_root: Option<String>,
 }
 
-pub async fn get_latest_finalized_blocknumber(timeout: Option<u64>) -> Result<i64> {
+/// Fetches the latest finalized block number from the Ethereum network.
+///
+/// This function queries the Ethereum node for the most recent block that has been
+/// finalized by the network consensus mechanism. Finalized blocks are considered
+/// safe from reorganization.
+///
+/// # Arguments
+///
+/// * `timeout` - Optional timeout in seconds for the RPC request. If `None`, uses default timeout.
+///
+/// # Returns
+///
+/// Returns a `Result<BlockNumber>` containing the latest finalized block number on success.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The `NODE_CONNECTION_STRING` environment variable is not set
+/// - The RPC request fails or times out
+/// - The response cannot be parsed as a valid block number
+/// - Network connectivity issues occur
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use fossil_headers_db::rpc::get_latest_finalized_blocknumber;
+///
+/// # async fn example() -> eyre::Result<()> {
+/// // Get latest finalized block with 30 second timeout
+/// let latest_block = get_latest_finalized_blocknumber(Some(30)).await?;
+/// println!("Latest finalized block: {}", latest_block.value());
+///
+/// // Use default timeout
+/// let latest_block = get_latest_finalized_blocknumber(None).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub async fn get_latest_finalized_blocknumber(timeout: Option<u64>) -> Result<BlockNumber> {
     // TODO: Id should be different on every request, this is how request are identified by us and by the node.
     let params = RpcRequest {
         jsonrpc: "2.0",
@@ -153,28 +234,69 @@ pub async fn get_latest_finalized_blocknumber(timeout: Option<u64>) -> Result<i6
         params: ("finalized", false),
     };
 
-    match make_retrying_rpc_call::<_, BlockHeaderWithEmptyTransaction>(
+    let blockheader = make_retrying_rpc_call::<_, BlockHeaderWithEmptyTransaction>(
         &params,
         timeout,
         MAX_RETRIES.into(),
     )
     .await
-    .context("Failed to get latest block number")
-    {
-        Ok(blockheader) => Ok(convert_hex_string_to_i64(&blockheader.number)?),
-        Err(e) => Err(e),
-    }
+    .map_err(|e| {
+        BlockchainError::rpc_connection(format!("Failed to get latest finalized block number: {e}"))
+    })?;
+
+    BlockNumber::from_hex(&blockheader.number)
 }
 
+/// Fetches complete block data including all transactions for a specific block number.
+///
+/// This function retrieves comprehensive blockchain data for a given block, including
+/// the block header information and full transaction details. This is more expensive
+/// than fetching just block headers but provides complete block state.
+///
+/// # Arguments
+///
+/// * `number` - The block number to fetch data for
+/// * `timeout` - Optional timeout in seconds for the RPC request. If `None`, uses default timeout.
+///
+/// # Returns
+///
+/// Returns a `Result<BlockHeaderWithFullTransaction>` containing the complete block data
+/// including all transaction details.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The `NODE_CONNECTION_STRING` environment variable is not set
+/// - The specified block number doesn't exist on the network
+/// - The RPC request fails or times out
+/// - The response cannot be parsed as valid block data
+/// - Network connectivity issues occur
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use fossil_headers_db::rpc::get_full_block_by_number;
+/// use fossil_headers_db::types::BlockNumber;
+///
+/// # async fn example() -> eyre::Result<()> {
+/// let block_number = BlockNumber::from_trusted(19000000);
+/// let block_data = get_full_block_by_number(block_number, Some(30)).await?;
+///
+/// println!("Block hash: {}", block_data.hash);
+/// println!("Number of transactions: {}", block_data.transactions.len());
+/// println!("Gas used: {}", block_data.gas_used);
+/// # Ok(())
+/// # }
+/// ```
 pub async fn get_full_block_by_number(
-    number: i64,
+    number: BlockNumber,
     timeout: Option<u64>,
 ) -> Result<BlockHeaderWithFullTransaction> {
     let params = RpcRequest {
         jsonrpc: "2.0",
         id: "0".to_string(),
         method: "eth_getBlockByNumber",
-        params: (format!("0x{:x}", number), true),
+        params: (format!("0x{:x}", number.value()), true),
     };
 
     make_retrying_rpc_call::<_, BlockHeaderWithFullTransaction>(
@@ -188,75 +310,91 @@ pub async fn get_full_block_by_number(
 // TODO: Make this work as expected
 #[allow(dead_code)]
 pub async fn batch_get_full_block_by_number(
-    numbers: Vec<i64>,
+    numbers: Vec<BlockNumber>,
     timeout: Option<u64>,
 ) -> Result<Vec<BlockHeaderWithFullTransaction>> {
     let mut params = Vec::new();
     for number in numbers {
-        let num_str = number.to_string();
+        let num_str = number.value().to_string();
         params.push(RpcRequest {
             jsonrpc: "2.0",
             id: num_str,
             method: "eth_getBlockByNumber",
-            params: (format!("0x{:x}", number), true),
+            params: (format!("0x{:x}", number.value()), true),
         });
     }
     make_rpc_call::<_, Vec<BlockHeaderWithFullTransaction>>(&params, timeout).await
 }
 
-async fn make_rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
-    params: &T,
-    timeout: Option<u64>,
-) -> Result<R> {
-    let connection_string = (*NODE_CONNECTION_STRING)
+fn get_connection_string() -> Result<&'static str> {
+    NODE_CONNECTION_STRING
+        .get_or_init(|| {
+            dotenvy::var("NODE_CONNECTION_STRING")
+                .map_err(|e| error!("Failed to get NODE_CONNECTION_STRING: {}", e))
+                .ok()
+        })
         .as_ref()
-        .ok_or_else(|| eyre::eyre!("NODE_CONNECTION_STRING not set"))?;
+        .ok_or_else(|| {
+            BlockchainError::configuration("NODE_CONNECTION_STRING", "Environment variable not set")
+        })
+        .map(std::string::String::as_str)
+}
 
-    let raw_response = match timeout {
+async fn send_http_request<T: Serialize + Sync>(
+    params: &T,
+    connection_string: &str,
+    timeout: Option<u64>,
+) -> Result<reqwest::Response> {
+    let request_builder = CLIENT
+        .get_or_init(Client::new)
+        .post(connection_string)
+        .json(params);
+
+    let response = match timeout {
         Some(seconds) => {
-            CLIENT
-                .post(connection_string)
+            request_builder
                 .timeout(Duration::from_secs(seconds))
-                .json(params)
                 .send()
                 .await
         }
-        None => CLIENT.post(connection_string).json(params).send().await,
+        None => request_builder.send().await,
     };
 
-    let raw_response = match raw_response {
-        Ok(response) => response,
-        Err(e) => {
-            error!("HTTP request error: {:?}", e);
-            return Err(e.into());
-        }
-    };
-
-    // Attempt to extract JSON from the response
-    let json_response = raw_response.text().await;
-    match json_response {
-        Ok(text) => {
-            // Try to deserialize the response, logging if it fails
-            match serde_json::from_str::<RpcResponse<R>>(&text) {
-                Ok(parsed) => Ok(parsed.result),
-                Err(e) => {
-                    error!(
-                        "Deserialization error: {:?}\nResponse snippet: {:?}",
-                        e,
-                        text // Log the entire response
-                    );
-                    Err(e.into())
-                }
-            }
-        }
-        Err(e) => {
-            error!("Failed to read response body: {:?}", e);
-            Err(e.into())
-        }
-    }
+    response.map_err(|e| {
+        error!("HTTP request error: {:?}", e);
+        e.into()
+    })
 }
 
-async fn make_retrying_rpc_call<T: Serialize, R: for<'de> Deserialize<'de> + Send>(
+async fn parse_rpc_response<R: for<'de> Deserialize<'de>>(
+    response: reqwest::Response,
+) -> Result<R> {
+    let text = response.text().await.map_err(|e| {
+        error!("Failed to read response body: {:?}", e);
+        e
+    })?;
+
+    serde_json::from_str::<RpcResponse<R>>(&text)
+        .map(|parsed| parsed.result)
+        .map_err(|e| {
+            error!(
+                "Deserialization error: {:?}\nResponse snippet: {:?}",
+                e, text
+            );
+            e.into()
+        })
+}
+
+async fn make_rpc_call<T: Serialize + Sync, R: for<'de> Deserialize<'de>>(
+    params: &T,
+    timeout: Option<u64>,
+) -> Result<R> {
+    let connection_string = get_connection_string()?;
+    let response = send_http_request(params, connection_string, timeout).await?;
+    parse_rpc_response(response).await
+}
+
+async fn make_retrying_rpc_call<T: Serialize + Sync, R: for<'de> Deserialize<'de> + Send>(
     params: &T,
     timeout: Option<u64>,
     max_retries: u32,
@@ -289,12 +427,14 @@ pub enum BlockTransaction {
 }
 
 impl TryFrom<BlockTransaction> for Transaction {
-    type Error = eyre::Error;
+    type Error = BlockchainError;
 
     fn try_from(value: BlockTransaction) -> std::result::Result<Self, Self::Error> {
         match value {
             BlockTransaction::Full(tx) => Ok(*tx),
-            BlockTransaction::Hash(_) => Err(eyre!("Cannot convert hash into Transaction")),
+            BlockTransaction::Hash(_) => Err(BlockchainError::internal(
+                "Cannot convert hash into Transaction",
+            )),
         }
     }
 }
@@ -349,10 +489,10 @@ pub trait EthereumRpcProvider {
     fn get_latest_finalized_blocknumber(
         &self,
         timeout: Option<u64>,
-    ) -> impl Future<Output = Result<i64>> + Send;
+    ) -> impl Future<Output = Result<BlockNumber>> + Send;
     fn get_full_block_by_number(
         &self,
-        number: i64,
+        number: BlockNumber,
         include_tx: bool,
         timeout: Option<u64>,
     ) -> impl Future<Output = Result<BlockHeader>> + Send;
@@ -367,6 +507,7 @@ pub struct EthereumJsonRpcClient {
 
 impl EthereumJsonRpcClient {
     #[allow(dead_code)]
+    #[must_use]
     pub fn new(connection_string: String, max_retries: u32) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -377,14 +518,14 @@ impl EthereumJsonRpcClient {
 }
 
 impl EthereumJsonRpcClient {
-    async fn make_rpc_call<T: Serialize + Send + Sync, R: for<'de> Deserialize<'de> + Send>(
+    async fn send_http_request<T: Serialize + Send + Sync>(
         &self,
         params: T,
         timeout: Option<u64>,
-    ) -> Result<R> {
+    ) -> Result<reqwest::Response> {
         let connection_string = self.connection_string.clone();
 
-        let raw_response = match timeout {
+        let response = match timeout {
             Some(seconds) => {
                 self.client
                     .post(connection_string)
@@ -402,36 +543,39 @@ impl EthereumJsonRpcClient {
             }
         };
 
-        let raw_response = match raw_response {
-            Ok(response) => response,
-            Err(e) => {
-                error!("HTTP request error: {:?}", e);
-                return Err(e.into());
-            }
-        };
+        response.map_err(|e| {
+            error!("HTTP request error: {:?}", e);
+            e.into()
+        })
+    }
 
-        // Attempt to extract JSON from the response
-        let json_response = raw_response.text().await;
-        match json_response {
-            Ok(text) => {
-                // Try to deserialize the response, logging if it fails
-                match serde_json::from_str::<RpcResponse<R>>(&text) {
-                    Ok(parsed) => Ok(parsed.result),
-                    Err(e) => {
-                        error!(
-                            "Deserialization error: {:?}\nResponse snippet: {:?}",
-                            e,
-                            text // Log the entire response
-                        );
-                        Err(e.into())
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to read response body: {:?}", e);
-                Err(e.into())
-            }
-        }
+    async fn parse_response<R: for<'de> Deserialize<'de> + Send>(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<R> {
+        let text = response.text().await.map_err(|e| {
+            error!("Failed to read response body: {:?}", e);
+            e
+        })?;
+
+        serde_json::from_str::<RpcResponse<R>>(&text)
+            .map(|parsed| parsed.result)
+            .map_err(|e| {
+                error!(
+                    "Deserialization error: {:?}\nResponse snippet: {:?}",
+                    e, text
+                );
+                e.into()
+            })
+    }
+
+    async fn make_rpc_call<T: Serialize + Send + Sync, R: for<'de> Deserialize<'de> + Send>(
+        &self,
+        params: T,
+        timeout: Option<u64>,
+    ) -> Result<R> {
+        let response = self.send_http_request(params, timeout).await?;
+        self.parse_response(response).await
     }
 
     async fn make_retrying_rpc_call<
@@ -465,7 +609,7 @@ impl EthereumJsonRpcClient {
 }
 
 impl EthereumRpcProvider for EthereumJsonRpcClient {
-    async fn get_latest_finalized_blocknumber(&self, timeout: Option<u64>) -> Result<i64> {
+    async fn get_latest_finalized_blocknumber(&self, timeout: Option<u64>) -> Result<BlockNumber> {
         let params = RpcRequest {
             jsonrpc: "2.0",
             id: "0".to_string(),
@@ -476,16 +620,17 @@ impl EthereumRpcProvider for EthereumJsonRpcClient {
         match self
             .make_retrying_rpc_call::<_, BlockHeader>(&params, timeout)
             .await
-            .context("Failed to get latest block number")
-        {
-            Ok(blockheader) => Ok(convert_hex_string_to_i64(&blockheader.number)?),
+            .map_err(|e| {
+                BlockchainError::rpc_connection(format!("Failed to get latest block number: {e}"))
+            }) {
+            Ok(blockheader) => Ok(BlockNumber::from_hex(&blockheader.number)?),
             Err(e) => Err(e),
         }
     }
 
     async fn get_full_block_by_number(
         &self,
-        number: i64,
+        number: BlockNumber,
         include_tx: bool,
         timeout: Option<u64>,
     ) -> Result<BlockHeader> {
@@ -493,7 +638,7 @@ impl EthereumRpcProvider for EthereumJsonRpcClient {
             jsonrpc: "2.0",
             id: "0".to_string(),
             method: "eth_getBlockByNumber",
-            params: (format!("0x{:x}", number), include_tx),
+            params: (format!("0x{:x}", number.value()), include_tx),
         };
 
         self.make_retrying_rpc_call::<_, BlockHeader>(&params, timeout)
@@ -505,7 +650,7 @@ impl EthereumRpcProvider for EthereumJsonRpcClient {
 pub fn try_convert_full_tx_vector(block_tx_vec: Vec<BlockTransaction>) -> Result<Vec<Transaction>> {
     let mut result_vec = vec![];
 
-    for block_tx in block_tx_vec.into_iter() {
+    for block_tx in block_tx_vec {
         let tx = block_tx.try_into()?;
         result_vec.push(tx);
     }
@@ -516,8 +661,12 @@ pub fn try_convert_full_tx_vector(block_tx_vec: Vec<BlockTransaction>) -> Result
 /// BIG TODO:
 /// Handle rpc errors correctly!
 /// Currently error cases are not handled as well.
+
 #[cfg(test)]
-mod tests {
+mod tests;
+
+#[cfg(test)]
+mod integration_tests {
     use std::thread;
 
     use super::*;
@@ -742,6 +891,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_max_retries_should_affect_number_of_retries() {
         let rpc_response = get_fixtures_for_tests().await;
         start_mock_rpc_server(
@@ -752,13 +902,15 @@ mod tests {
         // Set max retries to 2, which shouldn't have any success cases.
         let client = EthereumJsonRpcClient::new("http://127.0.0.1:8091".to_owned(), 2);
 
-        let block = client.get_full_block_by_number(21598014, false, None);
+        let block =
+            client.get_full_block_by_number(BlockNumber::from_trusted(21598014), false, None);
 
         let block = block.await;
         assert!(block.is_err());
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_get_full_block_by_number_should_retry_when_failed() {
         let rpc_response = get_fixtures_for_tests().await;
         start_mock_rpc_server(
@@ -767,7 +919,8 @@ mod tests {
         );
 
         let client = EthereumJsonRpcClient::new("http://127.0.0.1:8092".to_owned(), 2);
-        let block = client.get_full_block_by_number(21598014, false, None);
+        let block =
+            client.get_full_block_by_number(BlockNumber::from_trusted(21598014), false, None);
 
         let block = block.await.unwrap();
         assert_eq!(block.hash, rpc_response.hash);
@@ -775,6 +928,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_get_latest_finalized_blocknumber_should_retry_when_failed() {
         let rpc_response = get_fixtures_for_tests().await;
         start_mock_rpc_server(
@@ -788,11 +942,14 @@ mod tests {
         let block_number = block_number.await.unwrap();
         assert_eq!(
             block_number,
-            i64::from_str_radix(rpc_response.number.strip_prefix("0x").unwrap(), 16).unwrap()
+            BlockNumber::from_trusted(
+                i64::from_str_radix(rpc_response.number.strip_prefix("0x").unwrap(), 16).unwrap()
+            )
         );
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_get_full_block_by_number_without_tx() {
         let rpc_response = get_fixtures_for_tests().await;
         start_mock_rpc_server(
@@ -801,7 +958,8 @@ mod tests {
         );
 
         let client = EthereumJsonRpcClient::new("http://127.0.0.1:8094".to_owned(), 1);
-        let block = client.get_full_block_by_number(21598014, false, None);
+        let block =
+            client.get_full_block_by_number(BlockNumber::from_trusted(21598014), false, None);
 
         let block = block.await.unwrap();
         assert_eq!(block.hash, rpc_response.hash);
@@ -818,6 +976,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_get_full_block_by_number_with_tx() {
         let rpc_response = get_fixtures_for_tests().await;
         start_mock_rpc_server(
@@ -826,7 +985,8 @@ mod tests {
         );
 
         let client = EthereumJsonRpcClient::new("http://127.0.0.1:8095".to_owned(), 1);
-        let block = client.get_full_block_by_number(21598014, true, None);
+        let block =
+            client.get_full_block_by_number(BlockNumber::from_trusted(21598014), true, None);
 
         let block = block.await.unwrap();
         assert_eq!(block.hash, rpc_response.hash);
@@ -851,6 +1011,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_get_latest_finalized_blocknumber() {
         let rpc_response = get_fixtures_for_tests().await;
         start_mock_rpc_server(
@@ -864,7 +1025,9 @@ mod tests {
         let block_number = block_number.await.unwrap();
         assert_eq!(
             block_number,
-            i64::from_str_radix(rpc_response.number.strip_prefix("0x").unwrap(), 16).unwrap()
+            BlockNumber::from_trusted(
+                i64::from_str_radix(rpc_response.number.strip_prefix("0x").unwrap(), 16).unwrap()
+            )
         );
     }
 

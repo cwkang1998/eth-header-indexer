@@ -1,15 +1,10 @@
-use fossil_headers_db as _;
-
-mod commands;
-mod db;
-mod repositories;
-mod router;
-mod rpc;
-mod utils;
-
+// Legacy CLI binary - uses library interface only
 use clap::{Parser, ValueEnum};
 use core::cmp::min;
-use eyre::{Context, Result};
+use fossil_headers_db::{
+    commands, database::DB_MAX_CONNECTIONS, health::initialize_router, BlockNumber,
+    BlockchainError, Result,
+};
 use futures::future::join;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -32,7 +27,7 @@ struct Cli {
     end: Option<i64>,
 
     /// Number of threads (Max = 1000)
-    #[arg(short, long, default_value_t = db::DB_MAX_CONNECTIONS)]
+    #[arg(short, long, default_value_t = DB_MAX_CONNECTIONS)]
     loopsize: u32,
 }
 
@@ -58,23 +53,27 @@ async fn main() -> Result<()> {
     setup_ctrlc_handler(Arc::clone(&should_terminate))?;
 
     let router = async {
-        let res = router::initialize_router(should_terminate.clone()).await;
+        let res = initialize_router(should_terminate.clone()).await;
         match res {
             Ok(()) => info!("Router task completed"),
             Err(e) => warn!("Router task failed: {:?}", e),
-        };
+        }
     };
 
     let updater = async {
         let res = match cli.mode {
             Mode::Fix => {
-                commands::fill_gaps(cli.start, cli.end, Arc::clone(&terminate_clone)).await
+                let start = cli.start.map(BlockNumber::from_trusted);
+                let end = cli.end.map(BlockNumber::from_trusted);
+                commands::fill_gaps(start, end, Arc::clone(&terminate_clone)).await
             }
             Mode::Update => {
+                let start = cli.start.map(BlockNumber::from_trusted);
+                let end = cli.end.map(BlockNumber::from_trusted);
                 commands::update_from(
-                    cli.start,
-                    cli.end,
-                    min(cli.loopsize, db::DB_MAX_CONNECTIONS),
+                    start,
+                    end,
+                    min(cli.loopsize, DB_MAX_CONNECTIONS),
                     Arc::clone(&terminate_clone),
                 )
                 .await
@@ -84,7 +83,7 @@ async fn main() -> Result<()> {
         match res {
             Ok(()) => info!("Updater task completed"),
             Err(e) => warn!("Updater task failed: {:?}", e),
-        };
+        }
     };
 
     let _ = join(router, updater).await;
@@ -98,5 +97,5 @@ fn setup_ctrlc_handler(should_terminate: Arc<AtomicBool>) -> Result<()> {
         info!("Waiting for current processes to finish...");
         should_terminate.store(true, Ordering::SeqCst);
     })
-    .context("Failed to set Ctrl+C handler")
+    .map_err(|e| BlockchainError::internal(format!("Failed to set Ctrl+C handler: {e}")))
 }
