@@ -51,7 +51,8 @@ pub async fn main() -> Result<()> {
     let mut indexing_config_builder = IndexingConfig::builder()
         .db_conn_string(db_conn_string)
         .node_conn_string(node_conn_string)
-        .should_index_txs(should_index_txs);
+        .should_index_txs(should_index_txs)
+        .index_batch_size(10);
 
     if let Some(offset) = start_block_offset {
         indexing_config_builder = indexing_config_builder.start_block_offset(offset);
