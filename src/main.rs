@@ -1,92 +1,63 @@
-// Legacy CLI binary - uses library interface only
-use clap::{Parser, ValueEnum};
-use core::cmp::min;
-use fossil_headers_db::{
-    commands, database::DB_MAX_CONNECTIONS, health::initialize_router, BlockNumber,
-    BlockchainError, Result,
+use fossil_headers_db::errors::{BlockchainError, Result};
+use fossil_headers_db::indexer::lib::{start_indexing_services, IndexingConfig};
+use std::{
+    env,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
-use futures::future::join;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use tracing::{info, warn};
-use tracing_subscriber::{fmt, EnvFilter};
-
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct Cli {
-    /// What mode to run the program in
-    #[arg(value_enum)]
-    mode: Mode,
-
-    /// Start block number
-    #[arg(short, long)]
-    start: Option<i64>,
-
-    /// End block number
-    #[arg(short, long)]
-    end: Option<i64>,
-
-    /// Number of threads (Max = 1000)
-    #[arg(short, long, default_value_t = DB_MAX_CONNECTIONS)]
-    loopsize: u32,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
-enum Mode {
-    Fix,
-    Update,
-}
+use tracing::info;
+use tracing_subscriber::fmt;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
+pub async fn main() -> Result<()> {
+    if env::var("IS_DEV").is_ok_and(|v| v.parse().unwrap_or(false)) {
+        dotenvy::dotenv().map_err(|e| {
+            BlockchainError::configuration("dotenv", format!("Failed to load .env file: {e}"))
+        })?;
+    }
+
+    let db_conn_string = env::var("DB_CONNECTION_STRING").map_err(|_| {
+        BlockchainError::configuration("DB_CONNECTION_STRING", "Environment variable must be set")
+    })?;
+    let node_conn_string = env::var("NODE_CONNECTION_STRING").map_err(|_| {
+        BlockchainError::configuration("NODE_CONNECTION_STRING", "Environment variable not set")
+    })?;
+
+    let should_index_txs = env::var("INDEX_TRANSACTIONS")
+        .unwrap_or_else(|_| "false".to_string())
+        .parse::<bool>()
+        .map_err(|e| {
+            BlockchainError::configuration(
+                "INDEX_TRANSACTIONS",
+                format!("Invalid boolean value: {e}"),
+            )
+        })?;
+
+    let start_block_offset = env::var("START_BLOCK_OFFSET")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok());
 
     // Initialize tracing subscriber
-    fmt().with_env_filter(EnvFilter::from_default_env()).init();
+    fmt().init();
 
-    info!("Starting Indexer");
-
-    let cli = Cli::parse();
     let should_terminate = Arc::new(AtomicBool::new(false));
-    let terminate_clone = should_terminate.clone();
 
     setup_ctrlc_handler(Arc::clone(&should_terminate))?;
 
-    let router = async {
-        let res = initialize_router(should_terminate.clone()).await;
-        match res {
-            Ok(()) => info!("Router task completed"),
-            Err(e) => warn!("Router task failed: {:?}", e),
-        }
-    };
+    let mut indexing_config_builder = IndexingConfig::builder()
+        .db_conn_string(db_conn_string)
+        .node_conn_string(node_conn_string)
+        .should_index_txs(should_index_txs);
 
-    let updater = async {
-        let res = match cli.mode {
-            Mode::Fix => {
-                let start = cli.start.map(BlockNumber::from_trusted);
-                let end = cli.end.map(BlockNumber::from_trusted);
-                commands::fill_gaps(start, end, Arc::clone(&terminate_clone)).await
-            }
-            Mode::Update => {
-                let start = cli.start.map(BlockNumber::from_trusted);
-                let end = cli.end.map(BlockNumber::from_trusted);
-                commands::update_from(
-                    start,
-                    end,
-                    min(cli.loopsize, DB_MAX_CONNECTIONS),
-                    Arc::clone(&terminate_clone),
-                )
-                .await
-            }
-        };
+    if let Some(offset) = start_block_offset {
+        indexing_config_builder = indexing_config_builder.start_block_offset(offset);
+    }
 
-        match res {
-            Ok(()) => info!("Updater task completed"),
-            Err(e) => warn!("Updater task failed: {:?}", e),
-        }
-    };
+    let indexing_config = indexing_config_builder.build()?;
 
-    let _ = join(router, updater).await;
+    start_indexing_services(indexing_config, should_terminate).await?;
 
     Ok(())
 }

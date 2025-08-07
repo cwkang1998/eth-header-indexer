@@ -661,7 +661,6 @@ pub fn try_convert_full_tx_vector(block_tx_vec: Vec<BlockTransaction>) -> Result
 /// BIG TODO:
 /// Handle rpc errors correctly!
 /// Currently error cases are not handled as well.
-
 #[cfg(test)]
 mod tests;
 

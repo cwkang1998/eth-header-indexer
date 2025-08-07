@@ -77,28 +77,8 @@
 //! # }
 //! ```
 //!
-//! ### Legacy CLI Operations  
-//! ```rust,no_run
-//! use fossil_headers_db::commands::{update_from, fill_gaps};
-//! use fossil_headers_db::types::BlockNumber;
-//! use std::sync::{Arc, atomic::AtomicBool};
-//!
-//! # async fn example() -> eyre::Result<()> {
-//! let should_terminate = Arc::new(AtomicBool::new(false));
-//!
-//! // Update from latest stored block to current finalized block
-//! update_from(None, None, 100, should_terminate.clone()).await?;
-//!
-//! // Fill gaps in stored block data
-//! let start = BlockNumber::from_trusted(1000000);
-//! let end = BlockNumber::from_trusted(2000000);
-//! fill_gaps(Some(start), Some(end), should_terminate).await?;
-//! # Ok(())
-//! # }
-//! ```
 
 // Core public modules
-pub mod commands;
 pub mod errors;
 pub mod indexer;
 pub mod types;
