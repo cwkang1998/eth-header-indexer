@@ -1,6 +1,4 @@
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
-#[allow(clippy::expect_used)]
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(unused_imports)]
 mod unit_tests {

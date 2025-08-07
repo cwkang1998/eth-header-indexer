@@ -52,7 +52,7 @@ pub mod test_data {
             ("0xa", Ok(10)),
             ("0xff", Ok(255)),
             ("0x1000", Ok(4096)),
-            ("0x1312d00", Ok(20000000)),
+            ("0x1312d00", Ok(20_000_000)),
             ("0x7FFFFFFFFFFFFFFF", Ok(i64::MAX)),
             ("", Err(())),                   // Empty string
             ("0x", Err(())),                 // Just prefix

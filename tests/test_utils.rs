@@ -1,3 +1,6 @@
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
+
 use std::{sync::Arc, thread};
 
 use axum::{routing::post, Json, Router};
@@ -59,11 +62,10 @@ async fn get_fixtures_for_tests() -> Vec<BlockHeader> {
 
     for i in 0..=5 {
         let json_string = fs::read_to_string(format!(
-            "tests/fixtures/indexer/eth_getBlockByNumber_sepolia_{}.json",
-            i
+            "tests/fixtures/indexer/eth_getBlockByNumber_sepolia_{i}.json",
         ))
         .await
-        .unwrap();
+        .expect("missing fixtures");
 
         let block = serde_json::from_str::<JsonRpcResponse<BlockHeader>>(&json_string).unwrap();
         block_fixtures.push(block.result.unwrap());
@@ -74,11 +76,11 @@ async fn get_fixtures_for_tests() -> Vec<BlockHeader> {
 
 /// The integration mock server here returns a hardcoded answer based on what was queried.
 /// This is useful for our integration tests with the indexer.
-pub async fn start_integration_mock_rpc_server(addr: String) -> Result<Sender<i64>> {
+pub async fn start_integration_mock_rpc_server(addr: String) -> Result<Sender<u64>> {
     let fixtures = get_fixtures_for_tests().await;
-    let (tx, mut rx) = channel::<i64>(1);
+    let (tx, mut rx) = channel::<u64>(1);
 
-    let current_finalized = Arc::new(RwLock::new(fixtures.len() - 1));
+    let current_finalized = Arc::new(RwLock::new((fixtures.len() - 1) as u64));
 
     let current_finalized_clone = current_finalized.clone();
 
@@ -86,7 +88,7 @@ pub async fn start_integration_mock_rpc_server(addr: String) -> Result<Sender<i6
     tokio::spawn(async move {
         while let Some(new_block) = rx.recv().await {
             let mut finalized = current_finalized_clone.write().await;
-            *finalized = new_block as usize;
+            *finalized = new_block;
         }
     });
 
@@ -166,7 +168,7 @@ pub async fn start_integration_mock_rpc_server(addr: String) -> Result<Sender<i6
             axum::serve(listener, app.into_make_service())
                 .await
                 .unwrap();
-        })
+        });
     });
 
     Ok(tx)

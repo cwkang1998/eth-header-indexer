@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use fossil_headers_db::errors::{BlockchainError, Result};
 use fossil_headers_db::indexer::lib::{start_indexing_services, IndexingConfig};
 use std::{

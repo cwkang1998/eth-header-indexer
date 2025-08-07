@@ -78,6 +78,8 @@
 //! ```
 //!
 
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 // Core public modules
 pub mod errors;
 pub mod indexer;

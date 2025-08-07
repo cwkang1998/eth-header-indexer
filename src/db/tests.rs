@@ -1,6 +1,4 @@
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
-#[allow(clippy::expect_used)]
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(unused_imports)]
 mod unit_tests {
@@ -16,7 +14,7 @@ mod unit_tests {
             let hex_str = "0x1a2b3c";
             let result = convert_hex_string_to_i64(hex_str);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 1715004);
+            assert_eq!(result.unwrap(), 1_715_004);
         }
 
         #[test]
@@ -24,7 +22,7 @@ mod unit_tests {
             let hex_str = "1a2b3c";
             let result = convert_hex_string_to_i64(hex_str);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 1715004);
+            assert_eq!(result.unwrap(), 1_715_004);
         }
 
         #[test]

@@ -16,13 +16,13 @@ services:
       dockerfile: Dockerfile.indexer
       context: .
     ports:
-      - "3000:3000"
+      - "3123:3123"
     networks:
       - local_network
     environment:
       - DB_CONNECTION_STRING=postgres://postgres:postgres@db:5432/postgres
-      - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING:-https://sepolia.infura.io/v3/your-api-key}
-      - ROUTER_ENDPOINT=0.0.0.0:3000
+      - NODE_CONNECTION_STRING=${NODE_CONNECTION_STRING:-https://eth-sepolia.g.alchemy.com/v2/UR3K1jPkr-kyMPFj15cWJ62MoRYe8Sta}
+      - ROUTER_ENDPOINT=0.0.0.0:3123
       - INDEX_TRANSACTIONS=false
       - RUST_LOG=debug
       - START_BLOCK_OFFSET=100
